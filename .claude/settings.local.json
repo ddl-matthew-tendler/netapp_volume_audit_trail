@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/ -v -k \"demo or DemoData\" 2>&1)",
+      "Bash(python -m pytest tests/ -v 2>&1)"
+    ]
+  }
+}

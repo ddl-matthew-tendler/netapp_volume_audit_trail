@@ -1,0 +1,29 @@
+# Domino App configuration for NetApp SMB Audit Viewer
+# Deploy via: Domino → Apps → Publish App
+
+type: app
+name: netapp-smb-audit-viewer
+title: "NetApp SMB Audit Viewer"
+description: >
+  Allows Domino administrators to query NetApp ONTAP SMB/CIFS file-access
+  audit events directly from ONTAP audit logs — no data stored in Domino.
+
+# Domino runs the app with this command
+command: "gunicorn --bind 0.0.0.0:8888 --workers 2 --timeout 180 app:app"
+
+# Port Domino proxies to
+port: 8888
+
+# Only users with Admin role should access this app.
+# Enforce via Domino's App visibility settings (set to "Selected Users/Groups")
+# or via DOMINO_CANONICAL_ID header checking in the app.
+
+environment_variables:
+  # Optional defaults — users can override these in the form
+  ONTAP_CLUSTER_IP: ""       # e.g. "192.168.1.10"
+  ONTAP_USERNAME: ""         # e.g. "admin"
+  ONTAP_VERIFY_SSL: "false"  # Set to "true" if ONTAP has a trusted TLS cert
+
+# Compute environment: ensure python-evtx and other deps are installed
+# Add the following to the compute environment Dockerfile:
+#   RUN pip install flask requests python-evtx lxml gunicorn

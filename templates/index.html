@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NetApp SMB Audit Viewer | Domino</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+
+  <!-- ================================================================
+       HEADER
+  ================================================================ -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <span class="brand-logo">&#9670;</span>
+        <span class="brand-name">Domino</span>
+        <span class="brand-divider">|</span>
+        <span class="brand-product">NetApp SMB Audit Viewer</span>
+      </div>
+      <div class="header-right">
+        <span class="header-user" id="header-user"></span>
+        <div class="header-badge">Admin Only</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+
+    <!-- ================================================================
+         NOT CONFIGURED BANNER (shown if env vars are missing)
+    ================================================================ -->
+    {% if not configured %}
+    <div class="alert alert-error" style="margin-bottom:0;">
+      <strong>App not configured.</strong>
+      Ask your Domino administrator to set the following environment variables
+      on this app before it can be used:
+      <code>ONTAP_CLUSTER_IP</code>, <code>ONTAP_USERNAME</code>,
+      <code>ONTAP_PASSWORD</code>.
+    </div>
+    {% endif %}
+
+    {% if not evtx_available %}
+    <div class="alert alert-warning" style="margin-bottom:0;">
+      <strong>Dependency missing:</strong> <code>python-evtx</code> is not installed.
+      Add it to <code>requirements.txt</code> and redeploy.
+    </div>
+    {% endif %}
+
+    <!-- ================================================================
+         LOADING INITIALISATION
+    ================================================================ -->
+    <div id="init-loading" class="loading-banner">
+      <div class="spinner"></div>
+      <span>Connecting to ONTAP and loading storage virtual machines…</span>
+    </div>
+
+    <!-- ================================================================
+         CONNECTION ERROR (shown if /api/init fails)
+    ================================================================ -->
+    <div id="init-error" class="alert alert-error" style="display:none;"></div>
+
+    <!-- ================================================================
+         QUERY FORM  (hidden until /api/init succeeds)
+    ================================================================ -->
+    <section class="card" id="query-card" style="display:none;">
+
+      <!-- Context bar — auto-filled, read-only -->
+      <div class="context-bar" id="context-bar">
+        <div class="context-item">
+          <span class="context-label">Project</span>
+          <span class="context-value" id="ctx-project">—</span>
+        </div>
+        <div class="context-item">
+          <span class="context-label">Queried by</span>
+          <span class="context-value" id="ctx-user">—</span>
+        </div>
+        <div class="context-item">
+          <span class="context-label">ONTAP Cluster</span>
+          <span class="context-value" id="ctx-cluster">—</span>
+        </div>
+        <div class="context-item">
+          <span class="context-label">Connection</span>
+          <span class="context-value status-ok">&#10003; Connected</span>
+        </div>
+      </div>
+
+      <h2 class="card-title" style="margin-top:20px;">
+        Query SMB File Access Events
+      </h2>
+      <p class="card-subtitle">
+        Select a storage virtual machine and date range. Results are pulled
+        directly from ONTAP — nothing is stored in Domino.
+      </p>
+
+      <form id="query-form" autocomplete="off">
+
+        <div class="form-row three-col">
+
+          <!-- SVM — auto-populated dropdown -->
+          <div class="form-group required">
+            <label for="svm_name">
+              Storage Virtual Machine (SVM)
+              <button type="button" class="help-btn" data-help="svm">?</button>
+            </label>
+            <div class="select-wrapper">
+              <select id="svm_name" name="svm_name" required>
+                <option value="">Loading SVMs…</option>
+              </select>
+            </div>
+            <span class="field-hint">Auto-loaded from your ONTAP cluster — just pick one</span>
+          </div>
+
+          <!-- Start date — defaults to 7 days ago -->
+          <div class="form-group required">
+            <label for="start_date">From Date</label>
+            <input type="date" id="start_date" name="start_date" required />
+            <span class="field-hint">Defaults to 7 days ago</span>
+          </div>
+
+          <!-- End date — defaults to today -->
+          <div class="form-group required">
+            <label for="end_date">To Date</label>
+            <input type="date" id="end_date" name="end_date" required />
+            <span class="field-hint">Defaults to today</span>
+          </div>
+
+        </div>
+
+        <!-- Optional path filter — collapsed by default -->
+        <div class="optional-row">
+          <button type="button" class="btn-link" id="toggle-advanced">
+            &#9656; Optional: filter by file path
+          </button>
+          <div id="advanced-fields" style="display:none; margin-top:12px;">
+            <div class="form-group" style="max-width:480px;">
+              <label for="path_prefix">File Path Prefix</label>
+              <input type="text" id="path_prefix" name="path_prefix"
+                     placeholder="/vol/finance_data/" />
+              <span class="field-hint">
+                Leave blank to see all SMB events. Enter a path to narrow results
+                to a specific volume or folder.
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="run-btn"
+                  {% if not configured %}disabled{% endif %}>
+            Run Query
+          </button>
+          <button type="button" class="btn btn-secondary" id="live-btn">
+            View Live SMB Sessions
+          </button>
+          <button type="button" class="btn btn-ghost" id="clear-btn" style="display:none;">
+            Clear Results
+          </button>
+        </div>
+
+      </form>
+    </section>
+
+    <!-- ================================================================
+         LOADING QUERY STATE
+    ================================================================ -->
+    <div id="loading" class="loading-banner" style="display:none;">
+      <div class="spinner"></div>
+      <span>Fetching SMB audit events from ONTAP…</span>
+    </div>
+
+    <!-- ================================================================
+         ALERT
+    ================================================================ -->
+    <div id="alert-box" class="alert" style="display:none;"></div>
+
+    <!-- ================================================================
+         META BAR
+    ================================================================ -->
+    <div id="meta-bar" class="meta-bar" style="display:none;"></div>
+
+    <!-- ================================================================
+         RESULTS TABLE
+    ================================================================ -->
+    <section class="card" id="results-card" style="display:none;">
+      <div class="card-header-row">
+        <h2 class="card-title">SMB File Access Events</h2>
+        <div class="table-controls">
+          <input type="text" id="table-search" placeholder="Filter results…" />
+          <button class="btn btn-secondary btn-sm" id="export-csv-btn">
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table id="events-table">
+          <thead>
+            <tr>
+              <th data-col="timestamp_str" class="sortable">
+                Timestamp (UTC) <span class="sort-icon">&#8597;</span>
+              </th>
+              <th data-col="event_type" class="sortable">
+                Event Type <span class="sort-icon">&#8597;</span>
+              </th>
+              <th data-col="user" class="sortable">
+                User <span class="sort-icon">&#8597;</span>
+              </th>
+              <th data-col="domain">Domain</th>
+              <th data-col="client_ip" class="sortable">
+                Client IP <span class="sort-icon">&#8597;</span>
+              </th>
+              <th data-col="object_path">File Path</th>
+              <th data-col="share_name">Share</th>
+              <th data-col="access_operations">Operations</th>
+              <th data-col="result" class="sortable">
+                Result <span class="sort-icon">&#8597;</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="events-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="table-footer">
+        <span id="row-count"></span>
+        <span id="filter-count"></span>
+      </div>
+    </section>
+
+    <!-- ================================================================
+         LIVE SESSIONS MODAL
+    ================================================================ -->
+    <div id="sessions-modal" class="modal-backdrop" style="display:none;">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Live SMB Sessions</h3>
+          <button class="modal-close" id="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body" id="sessions-body">
+          <p>Loading…</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="app-footer">
+    Data sourced live from NetApp ONTAP &mdash; not stored in Domino.
+    SMB/CIFS events only (Event IDs 4656, 4660, 4663, 4670, 5140, 5145).
+  </footer>
+
+  <!-- ================================================================
+       HELP POPOVER (SVM explanation)
+  ================================================================ -->
+  <div id="help-svm" class="help-popover" style="display:none;">
+    <div class="help-popover-inner">
+      <button class="help-close" onclick="document.getElementById('help-svm').style.display='none'">&times;</button>
+      <h4>What is a Storage Virtual Machine (SVM)?</h4>
+      <p>
+        A <strong>Storage Virtual Machine</strong> (SVM, also called a <em>vserver</em>) is
+        a logical container inside your NetApp ONTAP cluster that holds volumes, network
+        interfaces, and protocols.  Think of it like a "virtual NAS filer" — your
+        Domino NetApp volume lives inside one.
+      </p>
+      <p>
+        The dropdown is <strong>auto-loaded</strong> from your ONTAP cluster — you do
+        not need to know the SVM name in advance. Simply pick the one that hosts your
+        Domino data.  If you are unsure which SVM to choose, ask your NetApp or
+        infrastructure administrator.
+      </p>
+      <h5>How to verify the correct SVM (optional)</h5>
+      <ol>
+        <li>
+          Open the <strong>NetApp ONTAP System Manager</strong> web UI
+          (your admin can provide the URL — typically
+          <code>https://&lt;cluster-ip&gt;</code>).
+        </li>
+        <li>Navigate to <strong>Storage → Storage VMs</strong>.</li>
+        <li>
+          Look for the SVM that has a <strong>CIFS/SMB</strong> protocol enabled
+          and whose volumes contain your Domino project data.
+        </li>
+      </ol>
+      <p class="help-note">
+        If you only see one SVM in the dropdown, that is almost certainly the correct one.
+      </p>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script>
+    document.querySelectorAll(".help-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = "help-" + btn.dataset.help;
+        document.getElementById(id).style.display = "flex";
+      });
+    });
+  </script>
+</body>
+</html>
