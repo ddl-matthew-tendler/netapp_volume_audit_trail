@@ -4,10 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NetApp SMB Audit Viewer | Domino</title>
-  <!-- Base tag ensures ALL relative URLs (CSS, JS, API calls) resolve
-       correctly through the Domino reverse proxy path automatically. -->
-  <base href="{{ request.path if request.path.endswith('/') else request.path + '/' }}">
-  <link rel="stylesheet" href="static/styles.css" />
+  <!-- All CSS is inlined to avoid external resource loading issues
+       caused by Domino's reverse proxy stripping the path prefix. -->
+  <style>{{ inline_css|safe }}</style>
 </head>
 <body>
 
@@ -318,8 +317,9 @@
     <div id="debug-body"></div>
   </div>
 
-  <script src="static/app.js"></script>
-  <script src="static/debug.js"></script>
+  <!-- All JS is inlined — same reason as CSS above. -->
+  <script>{{ inline_app_js|safe }}</script>
+  <script>{{ inline_debug_js|safe }}</script>
   <script>
     document.querySelectorAll(".help-btn").forEach(btn => {
       btn.addEventListener("click", () => {

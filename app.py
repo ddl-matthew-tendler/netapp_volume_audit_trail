@@ -74,6 +74,17 @@ def _domino_context() -> dict:
 @app.route("/")
 def index():
     ctx = _domino_context()
+    # Read CSS and JS files to inline them into the HTML.
+    # This eliminates all external resource loads, which is the only
+    # reliable way to serve a Domino App behind Domino's reverse proxy
+    # (Flask has no knowledge of the proxy prefix, so external <link>
+    # and <script src> paths can never resolve correctly).
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    inline = {}
+    for name in ("styles.css", "app.js", "debug.js"):
+        path = os.path.join(static_dir, name)
+        with open(path, "r") as f:
+            inline[name] = f.read()
     return render_template(
         "index.html",
         project_name=ctx["project_name"],
@@ -81,6 +92,9 @@ def index():
         demo_mode=DEMO_MODE,
         ontap_configured=_ONTAP_CONFIGURED,
         evtx_available=(EVTX_AVAILABLE or DEMO_MODE),
+        inline_css=inline["styles.css"],
+        inline_app_js=inline["app.js"],
+        inline_debug_js=inline["debug.js"],
     )
 
 

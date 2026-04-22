@@ -15,6 +15,19 @@
 "use strict";
 
 // -----------------------------------------------------------------------
+// Base URL for API calls — derived from the current page URL.
+// Domino proxies the app at a path like /modelproducts/abc/proxy/8888/
+// and the browser's location.href includes that full path.  We use it
+// as the base so that fetch("api/init") resolves correctly.
+// -----------------------------------------------------------------------
+const API_BASE = (() => {
+  let base = window.location.href;
+  // Ensure it ends with /
+  if (!base.endsWith("/")) base += "/";
+  return base;
+})();
+
+// -----------------------------------------------------------------------
 // State
 // -----------------------------------------------------------------------
 let allEvents      = [];
@@ -81,7 +94,7 @@ const advFields     = document.getElementById("advanced-fields");
   const timer = setTimeout(() => controller.abort(), 12000);
 
   try {
-    const res  = await fetch("api/init", { signal: controller.signal });
+    const res  = await fetch(API_BASE + "api/init", { signal: controller.signal });
     clearTimeout(timer);
     const data = await res.json();
 
@@ -438,11 +451,10 @@ function esc(s) {
 function truncate(s, n) { return s?.length > n ? "…" + s.slice(-(n - 1)) : (s || "—"); }
 function isoDate(d)      { return d.toISOString().split("T")[0]; }
 async function post(url, body) {
-  // Strip leading slash so URLs are relative to the current page path.
-  // This is required when Domino proxies the app under a sub-path like
-  // /modelproducts/appid/proxy/8888/ — absolute paths would bypass the proxy.
-  const relUrl = url.replace(/^\//, "");
-  return fetch(relUrl, {
+  // Build absolute URL using API_BASE (derived from page location)
+  // so requests always route through the Domino reverse proxy.
+  const fullUrl = API_BASE + url.replace(/^\//, "");
+  return fetch(fullUrl, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify(body),
