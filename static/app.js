@@ -60,41 +60,57 @@ const advFields     = document.getElementById("advanced-fields");
   document.getElementById("end_date").value   = isoDate(today);
   document.getElementById("start_date").value = isoDate(week);
 
-  try {
-    const res  = await fetch("/api/init");
-    const data = await res.json();
-
+  function showForm(data) {
     initLoading.style.display = "none";
-
-    if (!data.ok) {
-      initError.style.display = "block";
-      initError.innerHTML = `
-        <strong>Could not connect to ONTAP.</strong> ${esc(data.error)}
-        <br><br>
-        <strong>Action required:</strong> Ask your Domino administrator to set
-        <code>ONTAP_CLUSTER_IP</code>, <code>ONTAP_USERNAME</code>, and
-        <code>ONTAP_PASSWORD</code> as environment variables on this app, then republish it.`;
-      return;
-    }
-
-    // Fill in the auto-populated context bar
     setText("ctx-project", data.project_name || "—");
     setText("ctx-user",    data.username     || "—");
     setText("ctx-cluster", data.cluster_name || "—");
     setText("header-user", data.username ? `Logged in as: ${data.username}` : "");
-
-    // Populate SVM dropdown
     populateSvms(data.svms || []);
-
-    // Show the form
     queryCard.style.display = "block";
+  }
 
-  } catch (e) {
+  function showInitError(msg) {
     initLoading.style.display = "none";
     initError.style.display   = "block";
-    initError.innerHTML = `
-      <strong>Network error — could not reach the app backend.</strong>
-      <br>Details: ${esc(e.message)}`;
+    initError.innerHTML       = msg;
+  }
+
+  // Abort the fetch if it takes more than 12 seconds
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const res  = await fetch("api/init", { signal: controller.signal });
+    clearTimeout(timer);
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      // ONTAP connection failed — but still show the form if demo mode is active
+      if (data.demo_mode) {
+        showForm(data);
+      } else {
+        showInitError(`
+          <strong>Could not connect to ONTAP.</strong> ${esc(data.error || "Unknown error")}
+          <br><br>
+          Ask your Domino administrator to verify <code>ONTAP_CLUSTER_IP</code>,
+          <code>ONTAP_USERNAME</code>, and <code>ONTAP_PASSWORD</code> are set correctly
+          on this app, then republish it.`);
+      }
+      return;
+    }
+
+    showForm(data);
+
+  } catch (e) {
+    clearTimeout(timer);
+    const isTimeout = e.name === "AbortError";
+    showInitError(`
+      <strong>${isTimeout ? "Request timed out" : "Network error"} — could not reach the app backend.</strong>
+      ${isTimeout ? "The server did not respond within 12 seconds." : `Details: ${esc(e.message)}`}
+      <br><br>
+      Try <a href="javascript:location.reload()">reloading the page</a>.
+      If this keeps happening, ask your Domino administrator to check that the app is running.`);
   }
 })();
 
@@ -422,7 +438,11 @@ function esc(s) {
 function truncate(s, n) { return s?.length > n ? "…" + s.slice(-(n - 1)) : (s || "—"); }
 function isoDate(d)      { return d.toISOString().split("T")[0]; }
 async function post(url, body) {
-  return fetch(url, {
+  // Strip leading slash so URLs are relative to the current page path.
+  // This is required when Domino proxies the app under a sub-path like
+  // /modelproducts/appid/proxy/8888/ — absolute paths would bypass the proxy.
+  const relUrl = url.replace(/^\//, "");
+  return fetch(relUrl, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify(body),

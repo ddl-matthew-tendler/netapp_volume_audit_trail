@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NetApp SMB Audit Viewer | Domino</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
 </head>
 <body>
 
@@ -296,7 +296,27 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <!-- ================================================================
+       DEBUG CONSOLE (floating, toggle with Ctrl+` or the button)
+  ================================================================ -->
+  <div id="debug-fab" title="Debug Console (Ctrl+`)">&#9654; Debug</div>
+
+  <div id="debug-console">
+    <div id="debug-header">
+      <span id="debug-title">&#128270; Debug Console</span>
+      <span id="debug-badge">0</span>
+      <div id="debug-actions">
+        <button id="debug-copy" title="Copy all logs to clipboard">Copy</button>
+        <button id="debug-clear" title="Clear logs">Clear</button>
+        <button id="debug-close" title="Close (Ctrl+`)">&#10005;</button>
+      </div>
+    </div>
+    <div id="debug-env"></div>
+    <div id="debug-body"></div>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='debug.js') }}"></script>
   <script>
     document.querySelectorAll(".help-btn").forEach(btn => {
       btn.addEventListener("click", () => {
