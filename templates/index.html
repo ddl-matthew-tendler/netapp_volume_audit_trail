@@ -4,7 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NetApp SMB Audit Viewer | Domino</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  <!-- Base tag ensures ALL relative URLs (CSS, JS, API calls) resolve
+       correctly through the Domino reverse proxy path automatically. -->
+  <base href="{{ request.path if request.path.endswith('/') else request.path + '/' }}">
+  <link rel="stylesheet" href="static/styles.css" />
 </head>
 <body>
 
@@ -315,8 +318,8 @@
     <div id="debug-body"></div>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
-  <script src="{{ url_for('static', filename='debug.js') }}"></script>
+  <script src="static/app.js"></script>
+  <script src="static/debug.js"></script>
   <script>
     document.querySelectorAll(".help-btn").forEach(btn => {
       btn.addEventListener("click", () => {
