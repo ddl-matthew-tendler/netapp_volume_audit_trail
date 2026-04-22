@@ -29,20 +29,25 @@
   <main class="main-content">
 
     <!-- ================================================================
-         NOT CONFIGURED BANNER (shown if env vars are missing)
+         DEMO MODE BANNER
     ================================================================ -->
-    {% if not configured %}
-    <div class="alert alert-error" style="margin-bottom:0;">
-      <strong>App not configured.</strong>
-      Ask your Domino administrator to set the following environment variables
-      on this app before it can be used:
-      <code>ONTAP_CLUSTER_IP</code>, <code>ONTAP_USERNAME</code>,
-      <code>ONTAP_PASSWORD</code>.
+    {% if demo_mode %}
+    <div class="alert alert-demo">
+      {% if not ontap_configured %}
+      <strong>Running in Demo Mode</strong> —
+      No ONTAP connection is configured. Showing synthetic sample data so you can
+      explore the interface. To connect to a real NetApp cluster, ask your Domino
+      administrator to set <code>ONTAP_CLUSTER_IP</code>, <code>ONTAP_USERNAME</code>,
+      and <code>ONTAP_PASSWORD</code> as environment variables on this app.
+      {% else %}
+      <strong>Demo Mode is enabled</strong> (<code>ONTAP_DEMO_MODE=true</code>).
+      Showing synthetic sample data. Remove that variable to query your real ONTAP cluster.
+      {% endif %}
     </div>
     {% endif %}
 
-    {% if not evtx_available %}
-    <div class="alert alert-warning" style="margin-bottom:0;">
+    {% if not evtx_available and not demo_mode %}
+    <div class="alert alert-warning">
       <strong>Dependency missing:</strong> <code>python-evtx</code> is not installed.
       Add it to <code>requirements.txt</code> and redeploy.
     </div>
@@ -53,7 +58,9 @@
     ================================================================ -->
     <div id="init-loading" class="loading-banner">
       <div class="spinner"></div>
-      <span>Connecting to ONTAP and loading storage virtual machines…</span>
+      <span id="init-loading-text">
+        {% if demo_mode %}Loading demo data…{% else %}Connecting to ONTAP and loading storage virtual machines…{% endif %}
+      </span>
     </div>
 
     <!-- ================================================================

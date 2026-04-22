@@ -67,13 +67,13 @@ const advFields     = document.getElementById("advanced-fields");
     initLoading.style.display = "none";
 
     if (!data.ok) {
-      initError.style.display  = "block";
+      initError.style.display = "block";
       initError.innerHTML = `
         <strong>Could not connect to ONTAP.</strong> ${esc(data.error)}
         <br><br>
-        <strong>Action required:</strong> Ask your Domino administrator to set the
+        <strong>Action required:</strong> Ask your Domino administrator to set
         <code>ONTAP_CLUSTER_IP</code>, <code>ONTAP_USERNAME</code>, and
-        <code>ONTAP_PASSWORD</code> environment variables on this app, then republish it.`;
+        <code>ONTAP_PASSWORD</code> as environment variables on this app, then republish it.`;
       return;
     }
 
@@ -92,7 +92,9 @@ const advFields     = document.getElementById("advanced-fields");
   } catch (e) {
     initLoading.style.display = "none";
     initError.style.display   = "block";
-    initError.textContent     = `Network error: ${e.message}`;
+    initError.innerHTML = `
+      <strong>Network error — could not reach the app backend.</strong>
+      <br>Details: ${esc(e.message)}`;
   }
 })();
 

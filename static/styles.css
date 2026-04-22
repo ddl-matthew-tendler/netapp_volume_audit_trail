@@ -285,6 +285,9 @@ input:focus, select:focus {
 .alert-warning { background: #fff8e1; border-color: var(--warning); color: #7a5200; }
 .alert-error   { background: #fdecea; border-color: var(--danger);  color: #7b1a14; }
 .alert-info    { background: #e8f4fd; border-color: var(--accent);  color: #0d3a6e; }
+.alert-demo    { background: #f0f7ff; border-color: #7ab3e8;        color: #0d3a6e;
+                 border-left-width: 4px; border-left-style: solid;
+                 border-radius: var(--radius); padding: 12px 16px; font-size: 13px; }
 
 /* ---- Meta bar ---- */
 .meta-bar {

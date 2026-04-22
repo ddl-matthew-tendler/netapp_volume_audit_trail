@@ -27,7 +27,17 @@ from ontap_client import OntapClient, OntapError
 from evtx_parser import parse_smb_events, EVTX_AVAILABLE
 from demo_data import generate_demo_events, DEMO_SVM_LIST, DEMO_CLUSTER_NAME
 
-DEMO_MODE = os.environ.get("ONTAP_DEMO_MODE", "false").lower() == "true"
+# Demo mode activates automatically when ONTAP credentials are not configured,
+# so the app is always usable out of the box.
+_ONTAP_CONFIGURED = bool(
+    os.environ.get("ONTAP_CLUSTER_IP") and
+    os.environ.get("ONTAP_USERNAME") and
+    os.environ.get("ONTAP_PASSWORD")
+)
+DEMO_MODE = (
+    os.environ.get("ONTAP_DEMO_MODE", "false").lower() == "true"
+    or not _ONTAP_CONFIGURED
+)
 
 app = Flask(__name__)
 
@@ -64,18 +74,13 @@ def _domino_context() -> dict:
 @app.route("/")
 def index():
     ctx = _domino_context()
-    configured = DEMO_MODE or bool(
-        os.environ.get("ONTAP_CLUSTER_IP") and
-        os.environ.get("ONTAP_USERNAME") and
-        os.environ.get("ONTAP_PASSWORD")
-    )
     return render_template(
         "index.html",
         project_name=ctx["project_name"],
         username=ctx["username"],
-        configured=configured,
-        evtx_available=(EVTX_AVAILABLE or DEMO_MODE),
         demo_mode=DEMO_MODE,
+        ontap_configured=_ONTAP_CONFIGURED,
+        evtx_available=(EVTX_AVAILABLE or DEMO_MODE),
     )
 
 
