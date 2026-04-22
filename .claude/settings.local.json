@@ -3,7 +3,13 @@
     "allow": [
       "Bash(pip install:*)",
       "Bash(python -m pytest tests/ -v -k \"demo or DemoData\" 2>&1)",
-      "Bash(python -m pytest tests/ -v 2>&1)"
+      "Bash(python -m pytest tests/ -v 2>&1)",
+      "Bash(python -m pytest tests/ -v -k \"demo or DemoData\" --tb=short 2>&1)",
+      "Bash(python -m pytest tests/ -v --tb=short 2>&1)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git rm:*)"
     ]
   }
 }
