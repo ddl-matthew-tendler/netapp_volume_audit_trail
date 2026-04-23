@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NetApp SMB Audit Viewer | Domino</title>
+  <title>NetApp SMB Audit Viewer</title>
   <!-- All CSS is inlined to avoid external resource loading issues
        caused by Domino's reverse proxy stripping the path prefix. -->
   <style>{{ inline_css|safe }}</style>
@@ -17,9 +17,7 @@
     <div class="header-inner">
       <div class="header-brand">
         <span class="brand-logo">&#9670;</span>
-        <span class="brand-name">Domino</span>
-        <span class="brand-divider">|</span>
-        <span class="brand-product">NetApp SMB Audit Viewer</span>
+        <span class="brand-name">NetApp SMB Audit Viewer</span>
       </div>
       <div class="header-right">
         <span class="header-user" id="header-user"></span>
@@ -38,7 +36,7 @@
       {% if not ontap_configured %}
       <strong>Running in Demo Mode</strong> —
       No ONTAP connection is configured. Showing synthetic sample data so you can
-      explore the interface. To connect to a real NetApp cluster, ask your Domino
+      explore the interface. To connect to a real NetApp cluster, ask your
       administrator to set <code>ONTAP_CLUSTER_IP</code>, <code>ONTAP_USERNAME</code>,
       and <code>ONTAP_PASSWORD</code> as environment variables on this app.
       {% else %}
@@ -100,7 +98,7 @@
       </h2>
       <p class="card-subtitle">
         Select a scope and date range, then optionally narrow by filters. Results are pulled
-        directly from ONTAP — nothing is stored in Domino.
+        directly from ONTAP — nothing is stored locally.
       </p>
 
       <form id="query-form" autocomplete="off">
@@ -223,8 +221,7 @@
         </div>
 
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="run-btn"
-                  {% if not configured %}disabled{% endif %}>
+          <button type="submit" class="btn btn-primary" id="run-btn">
             Run Query
           </button>
           <button type="button" class="btn btn-secondary" id="live-btn">
@@ -326,7 +323,7 @@
   </main>
 
   <footer class="app-footer">
-    Data sourced live from NetApp ONTAP &mdash; not stored in Domino.
+    Data sourced live from NetApp ONTAP &mdash; nothing is stored locally.
     SMB/CIFS events only (Event IDs 4656, 4660, 4663, 4670, 5140, 5145).
   </footer>
 

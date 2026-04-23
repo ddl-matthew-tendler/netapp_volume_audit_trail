@@ -292,7 +292,7 @@ def generate_demo_events(svm_name: str, start_date: str, end_date: str,
 
 
 DEMO_SVM_LIST = ["svm-corp-data-01", "svm-finance-prod", "svm-hr-secure"]
-DEMO_CLUSTER_NAME = "CORP-ONTAP-CLUSTER-01 [DEMO MODE]"
+DEMO_CLUSTER_NAME = "CORP-ONTAP-CLUSTER-01 (Demo)"
 
 DEMO_VOLUMES = {
     "svm-corp-data-01": ["finance", "hr", "projects", "legal", "marketing", "shared_data", "archive_2024", "compliance"],

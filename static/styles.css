@@ -140,8 +140,6 @@ body {
 .header-brand { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .brand-logo { color: var(--domino-blue); font-size: 18px; }
 .brand-name { font-weight: 700; letter-spacing: 0.5px; }
-.brand-divider { opacity: 0.4; }
-.brand-product { opacity: 0.85; font-weight: 400; }
 .header-badge {
   background: #c0392b;
   color: #fff;

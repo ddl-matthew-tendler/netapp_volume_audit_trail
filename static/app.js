@@ -109,7 +109,7 @@ const filterFields  = document.getElementById("filter-fields");
         showInitError(`
           <strong>Could not connect to ONTAP.</strong> ${esc(data.error || "Unknown error")}
           <br><br>
-          Ask your Domino administrator to verify <code>ONTAP_CLUSTER_IP</code>,
+          Ask your administrator to verify <code>ONTAP_CLUSTER_IP</code>,
           <code>ONTAP_USERNAME</code>, and <code>ONTAP_PASSWORD</code> are set correctly
           on this app, then republish it.`);
       }
@@ -126,7 +126,7 @@ const filterFields  = document.getElementById("filter-fields");
       ${isTimeout ? "The server did not respond within 12 seconds." : `Details: ${esc(e.message)}`}
       <br><br>
       Try <a href="javascript:location.reload()">reloading the page</a>.
-      If this keeps happening, ask your Domino administrator to check that the app is running.`);
+      If this keeps happening, ask your administrator to check that the app is running.`);
   }
 })();
 

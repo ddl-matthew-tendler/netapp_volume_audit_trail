@@ -12,7 +12,13 @@
       "Bash(git rm:*)",
       "WebSearch",
       "WebFetch(domain:docs.dominodatalab.com)",
-      "Bash(python -c \"from app import app; print\\('OK'\\)\" 2>&1)"
+      "Bash(python -c \"from app import app; print\\('OK'\\)\" 2>&1)",
+      "Bash(git -C /mnt/code log --all --oneline --grep=\"domino\\\\|header\\\\|ui\\\\|design\\\\|chrome\" -i | head -20)",
+      "Bash(git -C /mnt/code log --all -p --grep=\"reverse proxy\" -i | head -100)",
+      "Bash(git -C /mnt/code log --all --pretty=format:\"%H %s\" | head -20)",
+      "Bash(git -C /mnt/code log --all -p --format=\"%H %s%b\" | head -300)",
+      "Bash(python -m pytest tests/test_app.py::TestDemoMode::test_init_returns_svms tests/test_app.py::TestDemoMode -v 2>&1 | tail -20)",
+      "Bash(python -m pytest tests/test_app.py -v 2>&1 | tail -15)"
     ]
   }
 }

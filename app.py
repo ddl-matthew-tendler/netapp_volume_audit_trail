@@ -51,7 +51,7 @@ def _get_client() -> OntapClient:
 
     if not cluster_ip or not username or not password:
         raise OntapError(
-            "ONTAP connection is not configured.  Ask your Domino administrator to set "
+            "ONTAP connection is not configured.  Ask your administrator to set "
             "ONTAP_CLUSTER_IP, ONTAP_USERNAME, and ONTAP_PASSWORD as environment variables "
             "on this app."
         )
@@ -269,6 +269,8 @@ def query_events():
         try:
             raw   = client.download_audit_log_file(svm_uuid, f["name"])
             evts  = parse_smb_events(raw, path_prefix, start_dt, end_dt)
+            for ev in evts:
+                ev["svm_name"] = body["svm_name"]
             all_events.extend(evts)
         except Exception as exc:
             parse_errors.append(f"{f['name']}: {exc}")

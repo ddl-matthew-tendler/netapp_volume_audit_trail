@@ -149,7 +149,7 @@ class TestDemoMode:
         assert data["ok"] is True
         assert len(data["svms"]) > 0
         assert data["demo_mode"] is True
-        assert "DEMO MODE" in data["cluster_name"]
+        assert "Demo" in data["cluster_name"]
 
     def test_query_returns_events(self, demo_app):
         r = _post(demo_app, "/api/query", {
