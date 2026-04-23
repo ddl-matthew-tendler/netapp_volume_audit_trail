@@ -35,6 +35,7 @@ let filteredEvents = [];
 let sortCol        = "timestamp_str";
 let sortDir        = "desc";
 let currentSvm     = "";
+let volumesBySvm   = {};  // populated from /api/init
 
 // -----------------------------------------------------------------------
 // DOM refs
@@ -59,8 +60,9 @@ const sessionsModal = document.getElementById("sessions-modal");
 const sessionsBody  = document.getElementById("sessions-body");
 const modalCloseBtn = document.getElementById("modal-close-btn");
 const svmSelect     = document.getElementById("svm_name");
-const toggleAdv     = document.getElementById("toggle-advanced");
-const advFields     = document.getElementById("advanced-fields");
+const volumeSelect  = document.getElementById("volume");
+const toggleFilters = document.getElementById("toggle-filters");
+const filterFields  = document.getElementById("filter-fields");
 
 // -----------------------------------------------------------------------
 // Initialise on page load — fully automatic
@@ -79,6 +81,7 @@ const advFields     = document.getElementById("advanced-fields");
     setText("ctx-user",    data.username     || "—");
     setText("ctx-cluster", data.cluster_name || "—");
     setText("header-user", data.username ? `Logged in as: ${data.username}` : "");
+    volumesBySvm = data.volumes || {};
     populateSvms(data.svms || []);
     queryCard.style.display = "block";
   }
@@ -143,23 +146,54 @@ function populateSvms(svms) {
   placeholder.textContent = `Select a storage virtual machine (${svms.length} available)`;
   svmSelect.appendChild(placeholder);
 
+  // "All SVMs" option
+  const allOpt = document.createElement("option");
+  allOpt.value       = "__all__";
+  allOpt.textContent = `All SVMs (${svms.length})`;
+  svmSelect.appendChild(allOpt);
+
   svms.forEach(name => {
     const opt = document.createElement("option");
     opt.value       = name;
     opt.textContent = name;
     svmSelect.appendChild(opt);
   });
+
+  // When SVM changes, update volume dropdown
+  svmSelect.addEventListener("change", () => populateVolumes(svmSelect.value));
+}
+
+function populateVolumes(svmName) {
+  volumeSelect.innerHTML = '<option value="">All volumes</option>';
+
+  let vols = [];
+  if (svmName === "__all__") {
+    // Combine all volumes from all SVMs
+    const seen = new Set();
+    Object.values(volumesBySvm).forEach(arr =>
+      arr.forEach(v => { if (!seen.has(v)) { seen.add(v); vols.push(v); } }));
+    vols.sort();
+  } else if (svmName && volumesBySvm[svmName]) {
+    vols = [...volumesBySvm[svmName]].sort();
+  }
+
+  vols.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value       = name;
+    opt.textContent = name;
+    volumeSelect.appendChild(opt);
+  });
 }
 
 // -----------------------------------------------------------------------
 // Toggle optional path filter
 // -----------------------------------------------------------------------
-toggleAdv.addEventListener("click", () => {
-  const open = advFields.style.display === "block";
-  advFields.style.display = open ? "none" : "block";
-  toggleAdv.textContent   = open
-    ? "▶ Optional: filter by file path"
-    : "▼ Optional: filter by file path";
+toggleFilters.addEventListener("click", () => {
+  const open = filterFields.style.display === "block";
+  filterFields.style.display = open ? "none" : "block";
+  toggleFilters.innerHTML    = open
+    ? "&#9656; Filters"
+    : "&#9662; Filters";
 });
 
 // -----------------------------------------------------------------------
@@ -174,11 +208,21 @@ queryForm.addEventListener("submit", async (e) => {
 
   currentSvm = svmSelect.value;
 
+  // Collect checked event types
+  const checkedTypes = [...document.querySelectorAll('input[name="event_type"]:checked')]
+    .map(cb => cb.value);
+  const allTypes = document.querySelectorAll('input[name="event_type"]').length;
+
   const payload = {
-    svm_name:    currentSvm,
-    start_date:  document.getElementById("start_date").value,
-    end_date:    document.getElementById("end_date").value,
-    path_prefix: document.getElementById("path_prefix")?.value.trim() || "",
+    svm_name:      currentSvm,
+    start_date:    document.getElementById("start_date").value,
+    end_date:      document.getElementById("end_date").value,
+    path_prefix:   document.getElementById("path_prefix")?.value.trim() || "",
+    username:      document.getElementById("username_filter")?.value.trim() || "",
+    result_filter: document.getElementById("result_filter")?.value || "all",
+    volume:        document.getElementById("volume")?.value || "",
+    // Only send event_types if user unchecked something (otherwise send empty = all)
+    event_types:   checkedTypes.length < allTypes ? checkedTypes : [],
   };
 
   try {
@@ -311,6 +355,7 @@ function renderTable(events) {
 function rowHtml(ev) {
   return `<tr>
     <td style="white-space:nowrap">${esc(ev.timestamp_str)}</td>
+    <td>${esc(ev.svm_name || "—")}</td>
     <td>${eventBadge(ev.event_type)}</td>
     <td><strong>${esc(ev.user)}</strong></td>
     <td>${esc(ev.domain)}</td>
@@ -348,7 +393,7 @@ tableSearch.addEventListener("input", () => renderTable(allEvents));
 function applyFilter(events, q) {
   q = (q || "").toLowerCase().trim();
   if (!q) return events;
-  const cols = ["timestamp_str", "event_type", "user", "domain",
+  const cols = ["timestamp_str", "svm_name", "event_type", "user", "domain",
                 "client_ip", "object_path", "share_name", "access_operations", "result"];
   return events.filter(ev => cols.some(c => (ev[c] || "").toLowerCase().includes(q)));
 }
@@ -380,7 +425,7 @@ function applySort(events, col, dir) {
 // -----------------------------------------------------------------------
 exportCsvBtn.addEventListener("click", () => {
   if (!filteredEvents.length) return;
-  const cols = ["timestamp_str", "event_type", "user", "domain",
+  const cols = ["timestamp_str", "svm_name", "event_type", "user", "domain",
                 "client_ip", "object_path", "share_name", "access_operations", "result"];
   const csv  = [cols.join(","),
     ...filteredEvents.map(ev =>

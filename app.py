@@ -25,7 +25,7 @@ from flask import Flask, jsonify, render_template, request
 
 from ontap_client import OntapClient, OntapError
 from evtx_parser import parse_smb_events, EVTX_AVAILABLE
-from demo_data import generate_demo_events, DEMO_SVM_LIST, DEMO_CLUSTER_NAME
+from demo_data import generate_demo_events, DEMO_SVM_LIST, DEMO_CLUSTER_NAME, DEMO_VOLUMES
 
 # Demo mode activates automatically when ONTAP credentials are not configured,
 # so the app is always usable out of the box.
@@ -116,6 +116,7 @@ def init():
             "ok": True,
             "cluster_name": DEMO_CLUSTER_NAME,
             "svms": DEMO_SVM_LIST,
+            "volumes": DEMO_VOLUMES,
             "project_name": ctx["project_name"] or "Demo Project",
             "username": ctx["username"] or "demo-admin",
             "evtx_available": True,
@@ -126,10 +127,21 @@ def init():
         client       = _get_client()
         cluster_info = client.ping()
         svms         = client.list_svms()
+        svm_names    = [s["name"] for s in svms]
+
+        # Fetch volumes grouped by SVM
+        all_volumes  = client.list_volumes()
+        volumes_by_svm = {}
+        for v in all_volumes:
+            svm = v.get("svm", {}).get("name", "")
+            if svm:
+                volumes_by_svm.setdefault(svm, []).append(v["name"])
+
         return jsonify({
             "ok":             True,
             "cluster_name":   cluster_info.get("name", "Unknown"),
-            "svms":           [s["name"] for s in svms],
+            "svms":           svm_names,
+            "volumes":        volumes_by_svm,
             "project_name":   ctx["project_name"],
             "username":       ctx["username"],
             "evtx_available": EVTX_AVAILABLE,
@@ -171,19 +183,27 @@ def query_events():
     if start_dt > end_dt:
         return jsonify({"error": "start_date must be before end_date"}), 400
 
-    path_prefix = body.get("path_prefix", "").strip()
-    max_files   = min(int(os.environ.get("ONTAP_MAX_FILES", 10)), 50)
-    ctx         = _domino_context()
+    path_prefix   = body.get("path_prefix", "").strip()
+    username_filt = body.get("username", "").strip()
+    event_types   = body.get("event_types") or []  # list of event type strings
+    result_filter = body.get("result_filter", "all").strip().lower()
+    volume_filt   = body.get("volume", "").strip()
+    max_files     = min(int(os.environ.get("ONTAP_MAX_FILES", 10)), 50)
+    ctx           = _domino_context()
 
     # --- Demo mode: return synthetic events, no ONTAP or python-evtx needed ---
     if DEMO_MODE:
         events = generate_demo_events(
-            body["svm_name"], body["start_date"], body["end_date"], path_prefix
+            body["svm_name"], body["start_date"], body["end_date"],
+            path_prefix, username_filt, event_types or None,
+            result_filter, volume_filt,
         )
+        svm_label = "All SVMs" if body["svm_name"] == "__all__" else body["svm_name"]
         return jsonify({
             "meta": _build_meta(
-                ctx, body["svm_name"], start_dt, end_dt,
-                files_checked=3, events_found=len(events), files_skipped=0,
+                ctx, svm_label, start_dt, end_dt,
+                files_checked=3 if body["svm_name"] != "__all__" else 9,
+                events_found=len(events), files_skipped=0,
             ),
             "events": events,
             "demo_mode": True,

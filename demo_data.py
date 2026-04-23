@@ -15,11 +15,25 @@ from datetime import datetime, timedelta, timezone
 
 
 def generate_demo_events(svm_name: str, start_date: str, end_date: str,
-                          path_prefix: str = "") -> list[dict]:
+                          path_prefix: str = "", username: str = "",
+                          event_types: list[str] | None = None,
+                          result_filter: str = "all",
+                          volume: str = "") -> list[dict]:
     """
     Return a list of realistic-looking SMB audit events.
     Timestamps are spread across the requested date range.
     """
+    # If "All SVMs" selected, generate events for each SVM and combine
+    if svm_name == "__all__":
+        combined = []
+        for svm in DEMO_SVM_LIST:
+            combined.extend(generate_demo_events(
+                svm, start_date, end_date, path_prefix,
+                username, event_types, result_filter, volume,
+            ))
+        combined.sort(key=lambda e: e["timestamp"], reverse=True)
+        return combined
+
     try:
         start = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
         end   = datetime.fromisoformat(end_date).replace(
@@ -236,6 +250,27 @@ def generate_demo_events(svm_name: str, start_date: str, end_date: str,
         if path_prefix and not raw["object_path"].lower().startswith(path_prefix.lower()):
             continue
 
+        # Apply username filter
+        if username and username.lower() not in raw["user"].lower():
+            continue
+
+        # Apply event type filter
+        if event_types and raw["event_type"] not in event_types:
+            continue
+
+        # Apply result filter
+        if result_filter == "success" and raw["result"] != "Success":
+            continue
+        if result_filter == "failure" and raw["result"] == "Success":
+            continue
+
+        # Apply volume filter — volume is the 3rd path segment: /vol/{svm}/{volume}/...
+        if volume:
+            parts = raw["object_path"].split("/")
+            event_volume = parts[3] if len(parts) > 3 else ""
+            if event_volume.lower() != volume.lower():
+                continue
+
         events.append({
             "event_id":          raw["event_id"],
             "event_type":        raw["event_type"],
@@ -248,6 +283,7 @@ def generate_demo_events(svm_name: str, start_date: str, end_date: str,
             "share_name":        raw["share_name"],
             "access_operations": raw["access_operations"],
             "result":            raw["result"],
+            "svm_name":          svm_name,
         })
 
     # Sort newest-first
@@ -257,3 +293,9 @@ def generate_demo_events(svm_name: str, start_date: str, end_date: str,
 
 DEMO_SVM_LIST = ["svm-corp-data-01", "svm-finance-prod", "svm-hr-secure"]
 DEMO_CLUSTER_NAME = "CORP-ONTAP-CLUSTER-01 [DEMO MODE]"
+
+DEMO_VOLUMES = {
+    "svm-corp-data-01": ["finance", "hr", "projects", "legal", "marketing", "shared_data", "archive_2024", "compliance"],
+    "svm-finance-prod": ["gl_data", "accounts_payable", "accounts_receivable", "treasury", "tax_filings", "audit_workpapers"],
+    "svm-hr-secure": ["compensation", "recruiting", "benefits", "personnel_records", "training"],
+}

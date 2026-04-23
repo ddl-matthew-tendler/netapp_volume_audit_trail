@@ -99,15 +99,16 @@
         Query SMB File Access Events
       </h2>
       <p class="card-subtitle">
-        Select a storage virtual machine and date range. Results are pulled
+        Select a scope and date range, then optionally narrow by filters. Results are pulled
         directly from ONTAP — nothing is stored in Domino.
       </p>
 
       <form id="query-form" autocomplete="off">
 
-        <div class="form-row three-col">
+        <!-- Row 1: Scope & Date Range -->
+        <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
 
-          <!-- SVM — auto-populated dropdown -->
+          <!-- SVM — auto-populated dropdown with "All SVMs" -->
           <div class="form-group required">
             <label for="svm_name">
               Storage Virtual Machine (SVM)
@@ -118,7 +119,18 @@
                 <option value="">Loading SVMs…</option>
               </select>
             </div>
-            <span class="field-hint">Auto-loaded from your ONTAP cluster — just pick one</span>
+            <span class="field-hint">Pick one or query all at once</span>
+          </div>
+
+          <!-- Volume — dynamically filtered by SVM -->
+          <div class="form-group">
+            <label for="volume">Volume</label>
+            <div class="select-wrapper">
+              <select id="volume" name="volume">
+                <option value="">All volumes</option>
+              </select>
+            </div>
+            <span class="field-hint">Narrow to a specific volume</span>
           </div>
 
           <!-- Start date — defaults to 7 days ago -->
@@ -137,20 +149,75 @@
 
         </div>
 
-        <!-- Optional path filter — collapsed by default -->
-        <div class="optional-row">
-          <button type="button" class="btn-link" id="toggle-advanced">
-            &#9656; Optional: filter by file path
+        <!-- Row 2: Filters -->
+        <div class="filter-row">
+          <button type="button" class="btn-link" id="toggle-filters">
+            &#9656; Filters
           </button>
-          <div id="advanced-fields" style="display:none; margin-top:12px;">
-            <div class="form-group" style="max-width:480px;">
-              <label for="path_prefix">File Path Prefix</label>
-              <input type="text" id="path_prefix" name="path_prefix"
-                     placeholder="/vol/finance_data/" />
-              <span class="field-hint">
-                Leave blank to see all SMB events. Enter a path to narrow results
-                to a specific volume or folder.
-              </span>
+          <div id="filter-fields" style="display:none; margin-top:12px;">
+            <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr;">
+
+              <!-- Username filter -->
+              <div class="form-group">
+                <label for="username_filter">Username</label>
+                <input type="text" id="username_filter" name="username_filter"
+                       placeholder="e.g. j.smith" />
+                <span class="field-hint">Partial match — leave blank for all users</span>
+              </div>
+
+              <!-- Result filter -->
+              <div class="form-group">
+                <label for="result_filter">Result</label>
+                <div class="select-wrapper">
+                  <select id="result_filter" name="result_filter">
+                    <option value="all">All Results</option>
+                    <option value="success">Success Only</option>
+                    <option value="failure">Failures Only</option>
+                  </select>
+                </div>
+                <span class="field-hint">Filter by access outcome</span>
+              </div>
+
+              <!-- File path prefix -->
+              <div class="form-group">
+                <label for="path_prefix">File Path Contains</label>
+                <input type="text" id="path_prefix" name="path_prefix"
+                       placeholder="/vol/finance_data/" />
+                <span class="field-hint">Narrow to a specific path</span>
+              </div>
+
+            </div>
+
+            <!-- Event type checkboxes -->
+            <div class="form-group" style="margin-top:12px;">
+              <label>Event Types</label>
+              <div class="checkbox-row">
+                <label class="checkbox-label">
+                  <input type="checkbox" name="event_type" value="Object Accessed" checked />
+                  Object Accessed
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="event_type" value="Object Deleted" checked />
+                  Object Deleted
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="event_type" value="Permissions Changed" checked />
+                  Permissions Changed
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="event_type" value="Handle Requested" checked />
+                  Handle Requested
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="event_type" value="Share Accessed" checked />
+                  Share Accessed
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="event_type" value="Share Access Checked" checked />
+                  Share Access Checked
+                </label>
+              </div>
+              <span class="field-hint">Uncheck to exclude specific event types from results</span>
             </div>
           </div>
         </div>
@@ -209,6 +276,9 @@
             <tr>
               <th data-col="timestamp_str" class="sortable">
                 Timestamp (UTC) <span class="sort-icon">&#8597;</span>
+              </th>
+              <th data-col="svm_name" class="sortable">
+                SVM <span class="sort-icon">&#8597;</span>
               </th>
               <th data-col="event_type" class="sortable">
                 Event Type <span class="sort-icon">&#8597;</span>

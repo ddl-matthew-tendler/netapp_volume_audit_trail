@@ -57,6 +57,18 @@ class OntapClient:
         return records[0]["uuid"]
 
     # ------------------------------------------------------------------
+    # Volumes
+    # ------------------------------------------------------------------
+
+    def list_volumes(self, svm_name: str = "") -> list[dict]:
+        """Return list of volumes, optionally filtered by SVM name."""
+        params = {"fields": "name,svm.name,size,style", "max_records": 1000}
+        if svm_name:
+            params["svm.name"] = svm_name
+        data = self._get("/storage/volumes", params=params)
+        return data.get("records", [])
+
+    # ------------------------------------------------------------------
     # Audit configuration
     # ------------------------------------------------------------------
 
