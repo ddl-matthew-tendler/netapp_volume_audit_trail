@@ -40,6 +40,21 @@ class OntapClient:
         return self._get("/cluster")
 
     # ------------------------------------------------------------------
+    # Cluster info
+    # ------------------------------------------------------------------
+
+    def get_ontap_version(self) -> dict:
+        """Return ONTAP version info: {full, generation, major, minor}."""
+        data = self._get("/cluster", params={"fields": "version"})
+        ver = data.get("version", {})
+        return {
+            "full": ver.get("full", "unknown"),
+            "generation": ver.get("generation", 0),
+            "major": ver.get("major", 0),
+            "minor": ver.get("minor", 0),
+        }
+
+    # ------------------------------------------------------------------
     # SVMs
     # ------------------------------------------------------------------
 
@@ -107,8 +122,20 @@ class OntapClient:
         return buf.getvalue()
 
     # ------------------------------------------------------------------
-    # CIFS / SMB sessions (live sessions, optional context)
+    # CIFS / SMB server & sessions
     # ------------------------------------------------------------------
+
+    def check_cifs_server(self, svm_name: str) -> dict | None:
+        """
+        Check if a CIFS server is configured on the SVM.
+        Returns the server record dict if found, None otherwise.
+        """
+        data = self._get(
+            "/protocols/cifs/services",
+            params={"svm.name": svm_name, "fields": "svm.name,name,enabled"},
+        )
+        records = data.get("records", [])
+        return records[0] if records else None
 
     def list_cifs_sessions(self, svm_name: str) -> list[dict]:
         """

@@ -159,8 +159,11 @@ function populateSvms(svms) {
     svmSelect.appendChild(opt);
   });
 
-  // When SVM changes, update volume dropdown
-  svmSelect.addEventListener("change", () => populateVolumes(svmSelect.value));
+  // When SVM changes, update volume dropdown and run preflight
+  svmSelect.addEventListener("change", () => {
+    populateVolumes(svmSelect.value);
+    runPreflight(svmSelect.value);
+  });
 }
 
 function populateVolumes(svmName) {
@@ -183,6 +186,86 @@ function populateVolumes(svmName) {
     opt.textContent = name;
     volumeSelect.appendChild(opt);
   });
+}
+
+// -----------------------------------------------------------------------
+// Preflight checks — validates ONTAP readiness per SVM
+// -----------------------------------------------------------------------
+const preflightSection = document.getElementById("preflight-section");
+const preflightBody    = document.getElementById("preflight-body");
+const preflightChecks  = document.getElementById("preflight-checks");
+const preflightSummary = document.getElementById("preflight-summary");
+const togglePreflight  = document.getElementById("toggle-preflight");
+
+togglePreflight.addEventListener("click", () => {
+  const open = preflightBody.style.display === "block";
+  preflightBody.style.display = open ? "none" : "block";
+  togglePreflight.innerHTML   = open
+    ? "&#9656; Prerequisites Check"
+    : "&#9662; Prerequisites Check";
+});
+
+async function runPreflight(svmName) {
+  if (!svmName) {
+    preflightSection.style.display = "none";
+    return;
+  }
+
+  preflightSection.style.display = "block";
+  preflightSummary.textContent   = "Checking…";
+  preflightSummary.className     = "preflight-summary";
+
+  try {
+    const res  = await post("/api/preflight", { svm_name: svmName });
+    const data = await res.json();
+    renderPreflight(data.checks || []);
+  } catch (err) {
+    preflightSummary.textContent = "Check failed";
+    preflightSummary.className   = "preflight-summary has-errors";
+    preflightChecks.innerHTML    = `<div class="preflight-item status-error">
+      <span class="preflight-icon">&#10060;</span>
+      <div class="preflight-content">
+        <div class="preflight-label">Could not run checks</div>
+        <div class="preflight-detail">${esc(err.message)}</div>
+      </div>
+    </div>`;
+  }
+}
+
+function renderPreflight(checks) {
+  if (!checks.length) {
+    preflightSection.style.display = "none";
+    return;
+  }
+
+  const icons = { pass: "&#10003;", warn: "&#9888;", fail: "&#10007;", error: "&#10007;" };
+  const fails  = checks.filter(c => c.status === "fail" || c.status === "error").length;
+  const warns  = checks.filter(c => c.status === "warn").length;
+  const passes = checks.filter(c => c.status === "pass").length;
+
+  if (fails > 0) {
+    preflightSummary.textContent = `${fails} issue(s) need attention`;
+    preflightSummary.className   = "preflight-summary has-errors";
+    // Auto-expand if there are failures
+    preflightBody.style.display  = "block";
+    togglePreflight.innerHTML    = "&#9662; Prerequisites Check";
+  } else if (warns > 0) {
+    preflightSummary.textContent = `All passed, ${warns} warning(s)`;
+    preflightSummary.className   = "preflight-summary has-issues";
+  } else {
+    preflightSummary.textContent = `All ${passes} check(s) passed`;
+    preflightSummary.className   = "preflight-summary all-pass";
+  }
+
+  preflightChecks.innerHTML = checks.map(c => `
+    <div class="preflight-item status-${c.status}">
+      <span class="preflight-icon">${icons[c.status] || "?"}</span>
+      <div class="preflight-content">
+        <div class="preflight-label">${esc(c.label)}</div>
+        <div class="preflight-detail">${esc(c.detail)}</div>
+      </div>
+    </div>
+  `).join("");
 }
 
 // -----------------------------------------------------------------------

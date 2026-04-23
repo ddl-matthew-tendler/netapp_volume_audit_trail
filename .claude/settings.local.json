@@ -18,7 +18,9 @@
       "Bash(git -C /mnt/code log --all --pretty=format:\"%H %s\" | head -20)",
       "Bash(git -C /mnt/code log --all -p --format=\"%H %s%b\" | head -300)",
       "Bash(python -m pytest tests/test_app.py::TestDemoMode::test_init_returns_svms tests/test_app.py::TestDemoMode -v 2>&1 | tail -20)",
-      "Bash(python -m pytest tests/test_app.py -v 2>&1 | tail -15)"
+      "Bash(python -m pytest tests/test_app.py -v 2>&1 | tail -15)",
+      "Bash(python -m pytest tests/test_app.py -v 2>&1 | head -40)",
+      "Bash(python -c \"\nfrom app import app\nwith app.test_client\\(\\) as c:\n    r = c.post\\('/api/preflight', json={'svm_name': 'svm-corp-data-01'}\\)\n    import json\n    print\\(json.dumps\\(r.get_json\\(\\), indent=2\\)\\)\n\")"
     ]
   }
 }

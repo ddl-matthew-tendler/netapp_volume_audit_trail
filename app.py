@@ -152,6 +152,207 @@ def init():
 
 
 # ---------------------------------------------------------------------------
+# Preflight checks — validates ONTAP readiness per SVM
+# ---------------------------------------------------------------------------
+
+@app.route("/api/preflight", methods=["POST"])
+def preflight():
+    """
+    Run prerequisite checks for a specific SVM (or all SVMs).
+    Returns a checklist of pass/fail items so the admin can see what
+    needs to be configured before querying.
+
+    In DEMO_MODE, returns an all-pass checklist.
+    """
+    body = request.get_json(force=True)
+    svm_name = body.get("svm_name", "")
+
+    if DEMO_MODE:
+        return jsonify({"checks": _demo_preflight_checks(svm_name)})
+
+    checks = []
+
+    # 1. ONTAP version >= 9.11.1
+    try:
+        client = _get_client()
+        ver = client.get_ontap_version()
+        ver_str = ver["full"]
+        gen, maj, minor = ver["generation"], ver["major"], ver["minor"]
+        meets_version = (gen > 9) or (gen == 9 and maj > 11) or (gen == 9 and maj == 11 and minor >= 1)
+        checks.append({
+            "id": "ontap_version",
+            "label": "ONTAP version >= 9.11.1",
+            "status": "pass" if meets_version else "fail",
+            "detail": f"Running ONTAP {ver_str}" if meets_version
+                      else f"Running ONTAP {ver_str}. The audit log file REST API requires 9.11.1 or later.",
+        })
+    except OntapError as exc:
+        checks.append({
+            "id": "ontap_version",
+            "label": "ONTAP version >= 9.11.1",
+            "status": "error",
+            "detail": f"Could not retrieve version: {exc}",
+        })
+        # Can't continue without a connection
+        return jsonify({"checks": checks})
+
+    # If checking a specific SVM, run SVM-level checks
+    svms_to_check = []
+    if svm_name and svm_name != "__all__":
+        svms_to_check = [svm_name]
+    elif svm_name == "__all__":
+        try:
+            svms_to_check = [s["name"] for s in client.list_svms()]
+        except OntapError:
+            svms_to_check = []
+
+    for svm in svms_to_check:
+        # 2. CIFS/SMB server configured
+        try:
+            cifs = client.check_cifs_server(svm)
+            if cifs:
+                enabled = cifs.get("enabled", True)
+                checks.append({
+                    "id": f"cifs_server_{svm}",
+                    "label": f"CIFS/SMB server on {svm}",
+                    "status": "pass" if enabled else "warn",
+                    "detail": f"CIFS server '{cifs.get('name', '?')}' configured"
+                              + ("" if enabled else " but disabled"),
+                })
+            else:
+                checks.append({
+                    "id": f"cifs_server_{svm}",
+                    "label": f"CIFS/SMB server on {svm}",
+                    "status": "fail",
+                    "detail": "No CIFS server found. SMB auditing requires a CIFS server "
+                              "(vserver cifs create).",
+                })
+        except OntapError as exc:
+            checks.append({
+                "id": f"cifs_server_{svm}",
+                "label": f"CIFS/SMB server on {svm}",
+                "status": "error",
+                "detail": str(exc),
+            })
+
+        # 3. Auditing enabled + EVTX format
+        try:
+            svm_uuid = client.get_svm_uuid(svm)
+            audit_cfg = client.get_audit_config(svm_uuid)
+            audit_enabled = audit_cfg.get("enabled", False)
+            log_format = audit_cfg.get("log", {}).get("format", audit_cfg.get("format", "evtx"))
+
+            if not audit_enabled:
+                checks.append({
+                    "id": f"audit_enabled_{svm}",
+                    "label": f"Auditing enabled on {svm}",
+                    "status": "fail",
+                    "detail": "Auditing is not enabled. Run: vserver audit enable "
+                              f"-vserver {svm}",
+                })
+            elif log_format.lower() != "evtx":
+                checks.append({
+                    "id": f"audit_enabled_{svm}",
+                    "label": f"Auditing enabled on {svm}",
+                    "status": "warn",
+                    "detail": f"Auditing is enabled but log format is '{log_format}', not 'evtx'. "
+                              "This app requires EVTX format. Reconfigure with: "
+                              f"vserver audit modify -vserver {svm} -format evtx",
+                })
+            else:
+                dest = audit_cfg.get("log_path", audit_cfg.get("log", {}).get("path", ""))
+                checks.append({
+                    "id": f"audit_enabled_{svm}",
+                    "label": f"Auditing enabled on {svm}",
+                    "status": "pass",
+                    "detail": f"Auditing enabled, EVTX format"
+                              + (f", destination: {dest}" if dest else ""),
+                })
+
+            # 4. Audit log files exist
+            if audit_enabled:
+                try:
+                    files = client.list_audit_log_files(svm_uuid)
+                    if files:
+                        checks.append({
+                            "id": f"audit_files_{svm}",
+                            "label": f"Audit log files on {svm}",
+                            "status": "pass",
+                            "detail": f"{len(files)} log file(s) available",
+                        })
+                    else:
+                        checks.append({
+                            "id": f"audit_files_{svm}",
+                            "label": f"Audit log files on {svm}",
+                            "status": "warn",
+                            "detail": "No audit log files found yet. Files are created "
+                                      "after the first audited SMB event occurs. Verify that "
+                                      "SACLs are configured on files/folders to be audited.",
+                        })
+                except OntapError as exc:
+                    error_str = str(exc)
+                    if "404" in error_str:
+                        checks.append({
+                            "id": f"audit_files_{svm}",
+                            "label": f"Audit log files on {svm}",
+                            "status": "fail",
+                            "detail": "The audit log files endpoint returned 404. "
+                                      "This endpoint requires ONTAP 9.11.1 or later.",
+                        })
+                    else:
+                        checks.append({
+                            "id": f"audit_files_{svm}",
+                            "label": f"Audit log files on {svm}",
+                            "status": "error",
+                            "detail": str(exc),
+                        })
+        except OntapError as exc:
+            checks.append({
+                "id": f"audit_enabled_{svm}",
+                "label": f"Auditing enabled on {svm}",
+                "status": "error",
+                "detail": f"Could not read audit config: {exc}. "
+                          "Auditing may not be configured on this SVM. Run: "
+                          f"vserver audit create -vserver {svm} -destination <path> -format evtx",
+            })
+
+    return jsonify({"checks": checks})
+
+
+def _demo_preflight_checks(svm_name: str) -> list[dict]:
+    """Return an all-pass preflight checklist for demo mode."""
+    checks = [{
+        "id": "ontap_version",
+        "label": "ONTAP version >= 9.11.1",
+        "status": "pass",
+        "detail": "Running ONTAP 9.14.1 (demo)",
+    }]
+    svms = [svm_name] if svm_name and svm_name != "__all__" else DEMO_SVM_LIST
+    for svm in svms:
+        checks.extend([
+            {
+                "id": f"cifs_server_{svm}",
+                "label": f"CIFS/SMB server on {svm}",
+                "status": "pass",
+                "detail": f"CIFS server 'CORP-NAS' configured",
+            },
+            {
+                "id": f"audit_enabled_{svm}",
+                "label": f"Auditing enabled on {svm}",
+                "status": "pass",
+                "detail": "Auditing enabled, EVTX format, destination: /audit_log",
+            },
+            {
+                "id": f"audit_files_{svm}",
+                "label": f"Audit log files on {svm}",
+                "status": "pass",
+                "detail": "3 log file(s) available",
+            },
+        ])
+    return checks
+
+
+# ---------------------------------------------------------------------------
 # Main query
 # ---------------------------------------------------------------------------
 
@@ -227,14 +428,21 @@ def query_events():
     except OntapError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    # Confirm auditing is enabled
+    # Confirm auditing is enabled and using EVTX format
     try:
         audit_cfg = client.get_audit_config(svm_uuid)
         if not audit_cfg.get("enabled", False):
             return jsonify({
                 "error": f"Auditing is not enabled on SVM '{body['svm_name']}'. "
-                         "Ask your NetApp administrator to enable it: "
+                         "Ask your administrator to enable it: "
                          "vserver audit enable -vserver <svm>"
+            }), 400
+        log_format = audit_cfg.get("log", {}).get("format", audit_cfg.get("format", "evtx"))
+        if log_format.lower() != "evtx":
+            return jsonify({
+                "error": f"Audit log format on SVM '{body['svm_name']}' is '{log_format}', "
+                         "but this app requires EVTX format. Ask your administrator to "
+                         f"reconfigure: vserver audit modify -vserver {body['svm_name']} -format evtx"
             }), 400
     except OntapError as exc:
         return jsonify({"error": f"Could not read audit config: {exc}"}), 400
