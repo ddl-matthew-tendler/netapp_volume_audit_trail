@@ -40,6 +40,7 @@ let volumesBySvm   = {};  // populated from /api/init
 // -----------------------------------------------------------------------
 // DOM refs
 // -----------------------------------------------------------------------
+const statusPanel   = document.getElementById("status-panel");
 const initLoading   = document.getElementById("init-loading");
 const initError     = document.getElementById("init-error");
 const queryCard     = document.getElementById("query-card");
@@ -86,12 +87,6 @@ const filterFields  = document.getElementById("filter-fields");
     queryCard.style.display = "block";
   }
 
-  function showInitError(msg) {
-    initLoading.style.display = "none";
-    initError.style.display   = "block";
-    initError.innerHTML       = msg;
-  }
-
   // Abort the fetch if it takes more than 12 seconds
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
@@ -101,17 +96,16 @@ const filterFields  = document.getElementById("filter-fields");
     clearTimeout(timer);
     const data = await res.json();
 
+    renderStatusPanel(data);
+    applyDemoIndicators(!!data.demo_mode);
+
     if (!res.ok || !data.ok) {
       // ONTAP connection failed — but still show the form if demo mode is active
       if (data.demo_mode) {
         showForm(data);
       } else {
-        showInitError(`
-          <strong>Could not connect to ONTAP.</strong> ${esc(data.error || "Unknown error")}
-          <br><br>
-          Ask your administrator to verify <code>ONTAP_CLUSTER_IP</code>,
-          <code>ONTAP_USERNAME</code>, and <code>ONTAP_PASSWORD</code> are set correctly
-          on this app, then republish it.`);
+        // Status panel already tells the user everything — just hide the spinner.
+        initLoading.style.display = "none";
       }
       return;
     }
@@ -121,14 +115,231 @@ const filterFields  = document.getElementById("filter-fields");
   } catch (e) {
     clearTimeout(timer);
     const isTimeout = e.name === "AbortError";
-    showInitError(`
-      <strong>${isTimeout ? "Request timed out" : "Network error"} — could not reach the app backend.</strong>
-      ${isTimeout ? "The server did not respond within 12 seconds." : `Details: ${esc(e.message)}`}
-      <br><br>
-      Try <a href="javascript:location.reload()">reloading the page</a>.
-      If this keeps happening, ask your administrator to check that the app is running.`);
+    renderStatusPanel({
+      ok: false,
+      demo_mode: false,
+      network_error: true,
+      error: isTimeout
+        ? "The server did not respond within 12 seconds."
+        : `Network error: ${e.message}`,
+    });
+    initLoading.style.display = "none";
   }
 })();
+
+// -----------------------------------------------------------------------
+// Status Panel — tells the user, unambiguously, which mode they're in and
+// (in demo/error modes) exactly how to connect to a real cluster.
+// -----------------------------------------------------------------------
+
+const STATUS_DETAILS_KEY = "netapp_audit_status_details_open";
+
+function statusDetailsOpen() {
+  // Default: open on first load (so first-time users see the instructions),
+  // then respect the user's choice via localStorage on subsequent loads.
+  const v = localStorage.getItem(STATUS_DETAILS_KEY);
+  return v === null ? true : v === "1";
+}
+function setStatusDetailsOpen(open) {
+  localStorage.setItem(STATUS_DETAILS_KEY, open ? "1" : "0");
+}
+
+function renderStatusPanel(data) {
+  const env = data.env_status || {};
+  const mode = data.network_error
+    ? "network"
+    : (data.demo_mode ? "demo"
+       : (data.ok ? "live" : "error"));
+
+  const open = statusDetailsOpen();
+
+  const heading = {
+    demo:    "Demo Mode — Showing Synthetic Sample Data",
+    live:    "Live Mode — Connected to ONTAP",
+    error:   "Live Mode Configured, but ONTAP Connection Failed",
+    network: "Cannot Reach the App Backend",
+  }[mode];
+
+  const summary = {
+    demo: data.demo_forced
+      ? "The ONTAP_DEMO_MODE override is set to 'true'. Every number, name, and event you see below is fabricated."
+      : "No ONTAP credentials were detected. Every number, name, and event you see below is fabricated.",
+    live: `All data below comes from the live cluster ${data.cluster_name || ""}${data.ontap_version ? ` (ONTAP ${data.ontap_version})` : ""}.`,
+    error: data.error || "The app found credentials, but the cluster rejected them or was unreachable.",
+    network: data.error || "The app backend did not respond.",
+  }[mode];
+
+  statusPanel.className = `status-panel status-panel--${mode}`;
+  statusPanel.innerHTML = `
+    <div class="status-panel__bar">
+      <span class="status-panel__badge">${
+        mode === "demo"  ? "DEMO DATA" :
+        mode === "live"  ? "LIVE" :
+        mode === "error" ? "ERROR" : "OFFLINE"
+      }</span>
+      <div class="status-panel__text">
+        <div class="status-panel__heading">${esc(heading)}</div>
+        <div class="status-panel__summary">${esc(summary)}</div>
+      </div>
+      <button type="button" class="status-panel__toggle" id="status-toggle"
+              aria-expanded="${open}">
+        ${open ? "Hide details ▾" : "Show details ▸"}
+      </button>
+    </div>
+    <div class="status-panel__details" id="status-details"
+         style="display:${open ? "block" : "none"}">
+      ${renderStatusDetails(mode, data, env)}
+    </div>
+  `;
+
+  document.getElementById("status-toggle").addEventListener("click", () => {
+    const box = document.getElementById("status-details");
+    const btn = document.getElementById("status-toggle");
+    const isOpen = box.style.display === "block";
+    box.style.display  = isOpen ? "none" : "block";
+    btn.textContent    = isOpen ? "Show details ▸" : "Hide details ▾";
+    btn.setAttribute("aria-expanded", String(!isOpen));
+    setStatusDetailsOpen(!isOpen);
+  });
+
+  // Wire up the "Reload to recheck" button (present in demo/error/network modes)
+  const reloadBtn = document.getElementById("status-reload-btn");
+  if (reloadBtn) reloadBtn.addEventListener("click", () => location.reload());
+}
+
+function renderStatusDetails(mode, data, env) {
+  const envRows = renderEnvChecklist(env);
+
+  if (mode === "live") {
+    return `
+      <div class="status-section">
+        <h4 class="status-section__title">Connection verified</h4>
+        <ul class="status-verified">
+          <li><strong>Cluster:</strong> ${esc(data.cluster_name || "—")}</li>
+          <li><strong>ONTAP version:</strong> ${esc(data.ontap_version || "unknown")}</li>
+          <li><strong>Storage VMs discovered:</strong> ${(data.svms || []).length}</li>
+          <li><strong>Credentials detected from environment:</strong></li>
+        </ul>
+        ${envRows}
+      </div>
+      <div class="status-section status-section--muted">
+        <h4 class="status-section__title">Want to switch back to demo mode?</h4>
+        <p>Set <code>ONTAP_DEMO_MODE=true</code> as a project environment variable in Domino, then stop and restart this app from the Apps tab.</p>
+      </div>
+    `;
+  }
+
+  if (mode === "network") {
+    return `
+      <div class="status-section">
+        <p>The page loaded, but <code>/api/init</code> did not respond. This usually means the Flask process crashed on startup or is still booting.</p>
+        <h4 class="status-section__title">What to try</h4>
+        <ol class="status-steps">
+          <li>Wait 10–15 seconds for the app to finish starting, then reload.</li>
+          <li>Go to <strong>Apps</strong> in the project nav and check the app's status and logs.</li>
+          <li>If the app is stopped or crashed, click <strong>Republish</strong>.</li>
+        </ol>
+      </div>
+      <div class="status-section">
+        <button type="button" class="btn btn-secondary btn-sm" id="status-reload-btn">Reload page</button>
+      </div>
+    `;
+  }
+
+  // demo or error — both show env checklist + Domino setup instructions + restart note
+
+  const errorSpecific = mode === "error" ? `
+    <div class="status-section status-section--error">
+      <h4 class="status-section__title">Error from ONTAP</h4>
+      <pre class="status-error-detail">${esc(data.error || "Unknown error")}</pre>
+      <p class="status-hint">The app detected credentials but could not use them. Common causes: wrong password, wrong cluster IP/hostname, TLS cert failure (try <code>ONTAP_VERIFY_SSL=false</code>), or the account lacks audit read permission.</p>
+    </div>
+  ` : "";
+
+  return `
+    ${errorSpecific}
+
+    <div class="status-section">
+      <h4 class="status-section__title">What the app currently sees in its environment</h4>
+      ${envRows}
+      <p class="status-hint">Values are read once when the app container starts. Changing them in Domino's UI does <strong>not</strong> affect a running app until you restart it (see below).</p>
+    </div>
+
+    <div class="status-section">
+      <h4 class="status-section__title">How to connect to a real NetApp cluster</h4>
+      <ol class="status-steps">
+        <li>
+          <strong>Store the password as a User Environment Variable</strong> (private, Vault-backed).<br>
+          Click your avatar (top-right) → <strong>Account Settings</strong> → <strong>User Environment Variables</strong> → <strong>Add variable</strong>.<br>
+          Name: <code>ONTAP_PASSWORD</code> — Value: your ONTAP password.
+        </li>
+        <li>
+          <strong>Store the cluster IP and username at the Project level.</strong><br>
+          Open this project → <strong>Settings</strong> tab → <strong>Environment variables</strong> section. Add:
+          <ul>
+            <li><code>ONTAP_CLUSTER_IP</code> — e.g. <code>192.168.1.10</code></li>
+            <li><code>ONTAP_USERNAME</code> — e.g. <code>domino-readonly</code></li>
+          </ul>
+          (Optional: <code>ONTAP_VERIFY_SSL</code> = <code>true</code> if your cluster uses a trusted TLS cert.)
+        </li>
+        <li>
+          <strong>Restart this app so it re-reads the variables.</strong><br>
+          Go to the project's <strong>Apps</strong> tab → <strong>Stop</strong>, then <strong>Publish</strong> (or <strong>Restart</strong>).
+          Reloading this page alone will <em>not</em> pick up new environment variables.
+        </li>
+        <li>
+          <strong>Come back to this page.</strong> When the page reloads after the app restart, this panel will flip to green "Live Mode — Connected to ONTAP" and list every credential it detected.
+        </li>
+      </ol>
+    </div>
+
+    <div class="status-section status-section--muted">
+      <h4 class="status-section__title">Already restarted the app?</h4>
+      <p>Click below to re-check. If the panel stays on demo/error after a restart, at least one variable is still missing or incorrect — the checklist above will show which one.</p>
+      <button type="button" class="btn btn-secondary btn-sm" id="status-reload-btn">Reload and re-check</button>
+    </div>
+  `;
+}
+
+function renderEnvChecklist(env) {
+  const rows = [
+    ["ONTAP_CLUSTER_IP", "Cluster IP or hostname",        true],
+    ["ONTAP_USERNAME",   "ONTAP read-only user",          true],
+    ["ONTAP_PASSWORD",   "Password (masked for display)", true],
+    ["ONTAP_VERIFY_SSL", "Verify TLS cert (optional)",    false],
+    ["ONTAP_DEMO_MODE",  "Force demo mode (optional)",    false],
+  ];
+  return `<ul class="env-checklist">${rows.map(([key, label, required]) => {
+    const entry    = env[key] || {};
+    const present  = !!entry.configured;
+    const value    = entry.value;
+    const iconCls  = present ? "ok" : (required ? "missing" : "off");
+    const icon     = present ? "✓" : (required ? "✗" : "—");
+    const valueStr = value != null
+      ? ` <code class="env-checklist__value">${esc(String(value))}</code>`
+      : (required ? ` <span class="env-checklist__missing">not set</span>` : "");
+    return `
+      <li class="env-checklist__row env-checklist__row--${iconCls}">
+        <span class="env-checklist__icon">${icon}</span>
+        <code class="env-checklist__key">${esc(key)}</code>
+        <span class="env-checklist__label">${esc(label)}${required ? "" : " <em>(optional)</em>"}</span>
+        ${valueStr}
+      </li>`;
+  }).join("")}</ul>`;
+}
+
+// -----------------------------------------------------------------------
+// Demo indicators — persistent cues so users never forget they're
+// looking at synthetic data while scrolling results.
+// -----------------------------------------------------------------------
+let DEMO_MODE_CLIENT = false;
+
+function applyDemoIndicators(isDemo) {
+  DEMO_MODE_CLIENT = isDemo;
+  document.body.classList.toggle("is-demo-mode", isDemo);
+  const base = "NetApp SMB Audit Viewer";
+  document.title = isDemo ? `[DEMO] ${base}` : base;
+}
 
 // -----------------------------------------------------------------------
 // Populate SVM dropdown
@@ -527,7 +738,13 @@ exportCsvBtn.addEventListener("click", () => {
 function renderMetaBar(meta) {
   if (!meta) return;
   metaBar.style.display = "flex";
+  const demoPill = DEMO_MODE_CLIENT
+    ? `<div class="meta-item meta-demo-pill">
+         <span>DEMO DATA — synthetic events, no cluster was queried</span>
+       </div>`
+    : "";
   metaBar.innerHTML = `
+    ${demoPill}
     ${metaItem("Project",       meta.project_name)}
     ${metaItem("Queried by",    meta.queried_by)}
     ${metaItem("SVM",           meta.svm_name)}

@@ -29,22 +29,12 @@
   <main class="main-content">
 
     <!-- ================================================================
-         DEMO MODE BANNER
+         CONNECTION STATUS PANEL
+         Rendered by JS from /api/init. Shows demo/live/error state with
+         an expandable details section (env-var checklist, restart guidance,
+         ONTAP version, etc.).
     ================================================================ -->
-    {% if demo_mode %}
-    <div class="alert alert-demo">
-      {% if not ontap_configured %}
-      <strong>Running in Demo Mode</strong> —
-      No ONTAP connection is configured. Showing synthetic sample data so you can
-      explore the interface. To connect to a real NetApp cluster, ask your
-      administrator to set <code>ONTAP_CLUSTER_IP</code>, <code>ONTAP_USERNAME</code>,
-      and <code>ONTAP_PASSWORD</code> as environment variables on this app.
-      {% else %}
-      <strong>Demo Mode is enabled</strong> (<code>ONTAP_DEMO_MODE=true</code>).
-      Showing synthetic sample data. Remove that variable to query your real ONTAP cluster.
-      {% endif %}
-    </div>
-    {% endif %}
+    <section id="status-panel" class="status-panel" aria-live="polite"></section>
 
     {% if not evtx_available and not demo_mode %}
     <div class="alert alert-warning">
@@ -86,10 +76,6 @@
         <div class="context-item">
           <span class="context-label">ONTAP Cluster</span>
           <span class="context-value" id="ctx-cluster">—</span>
-        </div>
-        <div class="context-item">
-          <span class="context-label">Connection</span>
-          <span class="context-value status-ok">&#10003; Connected</span>
         </div>
       </div>
 

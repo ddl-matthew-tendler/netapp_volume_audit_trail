@@ -157,7 +157,19 @@ class OntapClient:
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         url = f"{self.base_url}{path}"
-        resp = self.session.get(url, params=params, timeout=30)
+        try:
+            resp = self.session.get(url, params=params, timeout=30)
+        except requests.exceptions.ConnectTimeout:
+            raise OntapError(f"Connection to {self.base_url} timed out. "
+                             "Check ONTAP_CLUSTER_IP and that the cluster is reachable from Domino.")
+        except requests.exceptions.SSLError as exc:
+            raise OntapError(f"TLS/SSL error talking to {self.base_url}: {exc}. "
+                             "If the cluster uses a self-signed cert, leave ONTAP_VERIFY_SSL unset or set it to 'false'.")
+        except requests.exceptions.ConnectionError as exc:
+            raise OntapError(f"Could not connect to {self.base_url}: {exc}. "
+                             "Check ONTAP_CLUSTER_IP, DNS, and network reachability.")
+        except requests.exceptions.RequestException as exc:
+            raise OntapError(f"HTTP request to {self.base_url} failed: {exc}")
         self._raise_for_status(resp)
         return resp.json()
 

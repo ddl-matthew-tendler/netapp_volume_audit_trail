@@ -20,7 +20,11 @@
       "Bash(python -m pytest tests/test_app.py::TestDemoMode::test_init_returns_svms tests/test_app.py::TestDemoMode -v 2>&1 | tail -20)",
       "Bash(python -m pytest tests/test_app.py -v 2>&1 | tail -15)",
       "Bash(python -m pytest tests/test_app.py -v 2>&1 | head -40)",
-      "Bash(python -c \"\nfrom app import app\nwith app.test_client\\(\\) as c:\n    r = c.post\\('/api/preflight', json={'svm_name': 'svm-corp-data-01'}\\)\n    import json\n    print\\(json.dumps\\(r.get_json\\(\\), indent=2\\)\\)\n\")"
+      "Bash(python -c \"\nfrom app import app\nwith app.test_client\\(\\) as c:\n    r = c.post\\('/api/preflight', json={'svm_name': 'svm-corp-data-01'}\\)\n    import json\n    print\\(json.dumps\\(r.get_json\\(\\), indent=2\\)\\)\n\")",
+      "Bash(curl -s \"https://www.google.com/search?q=domino+data+lab+docs+project+environment+variables+ui+path\" -L -A \"Mozilla/5.0\")",
+      "Bash(python *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -I http://127.0.0.1:8888/)"
     ]
   }
 }

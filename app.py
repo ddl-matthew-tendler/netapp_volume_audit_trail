@@ -34,10 +34,38 @@ _ONTAP_CONFIGURED = bool(
     os.environ.get("ONTAP_USERNAME") and
     os.environ.get("ONTAP_PASSWORD")
 )
-DEMO_MODE = (
-    os.environ.get("ONTAP_DEMO_MODE", "false").lower() == "true"
-    or not _ONTAP_CONFIGURED
-)
+_DEMO_FORCED = os.environ.get("ONTAP_DEMO_MODE", "false").lower() == "true"
+DEMO_MODE = _DEMO_FORCED or not _ONTAP_CONFIGURED
+
+
+def _env_status() -> dict:
+    """Report which ONTAP env vars the app actually sees at runtime.
+
+    Values are never returned — only presence. The password row is always
+    masked so viewers of the UI can't read it.
+    """
+    cluster = os.environ.get("ONTAP_CLUSTER_IP", "").strip()
+    user    = os.environ.get("ONTAP_USERNAME", "").strip()
+    pwd     = os.environ.get("ONTAP_PASSWORD", "").strip()
+    verify  = os.environ.get("ONTAP_VERIFY_SSL", "false").strip().lower()
+    return {
+        "ONTAP_CLUSTER_IP": {"configured": bool(cluster), "value": cluster or None},
+        "ONTAP_USERNAME":   {"configured": bool(user),    "value": user or None},
+        "ONTAP_PASSWORD":   {"configured": bool(pwd),     "value": "••••••••" if pwd else None},
+        "ONTAP_VERIFY_SSL": {"configured": True,          "value": verify or "false"},
+        "ONTAP_DEMO_MODE":  {"configured": _DEMO_FORCED,  "value": "true" if _DEMO_FORCED else "false"},
+    }
+
+
+def _demo_reason() -> str:
+    """Explain — in one short sentence — why the app is in demo mode."""
+    if _DEMO_FORCED:
+        return "ONTAP_DEMO_MODE is set to 'true', which forces demo mode even if credentials are configured."
+    missing = [k for k in ("ONTAP_CLUSTER_IP", "ONTAP_USERNAME", "ONTAP_PASSWORD")
+               if not os.environ.get(k, "").strip()]
+    if missing:
+        return f"Missing environment variable(s): {', '.join(missing)}."
+    return ""
 
 app = Flask(__name__)
 
@@ -110,6 +138,7 @@ def init():
     In DEMO_MODE, returns synthetic data with no ONTAP connection needed.
     """
     ctx = _domino_context()
+    env_status = _env_status()
 
     if DEMO_MODE:
         return jsonify({
@@ -121,6 +150,9 @@ def init():
             "username": ctx["username"] or "demo-admin",
             "evtx_available": True,
             "demo_mode": True,
+            "demo_reason": _demo_reason(),
+            "demo_forced": _DEMO_FORCED,
+            "env_status": env_status,
         })
 
     try:
@@ -128,6 +160,13 @@ def init():
         cluster_info = client.ping()
         svms         = client.list_svms()
         svm_names    = [s["name"] for s in svms]
+
+        # Fetch ONTAP version for the status panel
+        try:
+            version_info = client.get_ontap_version()
+            ontap_version = version_info.get("full", "unknown")
+        except OntapError:
+            ontap_version = "unknown"
 
         # Fetch volumes grouped by SVM
         all_volumes  = client.list_volumes()
@@ -140,15 +179,22 @@ def init():
         return jsonify({
             "ok":             True,
             "cluster_name":   cluster_info.get("name", "Unknown"),
+            "ontap_version":  ontap_version,
             "svms":           svm_names,
             "volumes":        volumes_by_svm,
             "project_name":   ctx["project_name"],
             "username":       ctx["username"],
             "evtx_available": EVTX_AVAILABLE,
             "demo_mode":      False,
+            "env_status":     env_status,
         })
     except OntapError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+            "env_status": env_status,
+            "demo_mode": False,
+        }), 400
 
 
 # ---------------------------------------------------------------------------

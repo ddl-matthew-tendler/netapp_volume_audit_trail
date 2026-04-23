@@ -46,6 +46,242 @@ body {
   font-size: 13px;
 }
 
+/* ============================================================
+   STATUS PANEL — demo / live / error modes
+   ============================================================ */
+
+.status-panel {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  background: #fff;
+}
+.status-panel__bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+}
+.status-panel__badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  color: #fff;
+  text-transform: uppercase;
+}
+.status-panel__text { flex: 1; min-width: 0; }
+.status-panel__heading {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+.status-panel__summary {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.status-panel__toggle {
+  flex-shrink: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font);
+}
+.status-panel__toggle:hover { background: #f8f9fb; border-color: var(--accent); }
+
+.status-panel__details {
+  border-top: 1px solid var(--border);
+  padding: 18px;
+  background: #fbfcfe;
+}
+
+.status-section { margin-bottom: 18px; }
+.status-section:last-child { margin-bottom: 0; }
+.status-section--muted { opacity: 0.85; }
+.status-section--error {
+  background: #fef6f5;
+  border: 1px solid #f3c9c5;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.status-section__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.status-section p,
+.status-section li { font-size: 13px; line-height: 1.55; color: var(--text); }
+.status-section code {
+  background: #eef2f7;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #0d3a6e;
+}
+.status-steps { padding-left: 22px; margin: 4px 0; }
+.status-steps > li { margin-bottom: 10px; }
+.status-steps ul { margin: 4px 0 0 0; padding-left: 20px; }
+.status-verified {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px 0;
+}
+.status-verified li {
+  padding: 3px 0;
+  font-size: 13px;
+}
+.status-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.status-error-detail {
+  background: #2a1513;
+  color: #ffcdc7;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: 5px;
+  overflow-x: auto;
+  margin: 8px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Variant: Demo (amber/yellow — attention-grabbing) ---- */
+.status-panel--demo {
+  border-left: 6px solid var(--warning);
+  background: #fffaf0;
+}
+.status-panel--demo .status-panel__badge { background: var(--warning); }
+.status-panel--demo .status-panel__details { background: #fffdf7; }
+
+/* ---- Variant: Live (green — confirmation) ---- */
+.status-panel--live {
+  border-left: 6px solid var(--success);
+  background: #f4fbf7;
+}
+.status-panel--live .status-panel__badge { background: var(--success); }
+.status-panel--live .status-panel__details { background: #fafdfb; }
+
+/* ---- Variant: Error (red — credentials set but broken) ---- */
+.status-panel--error {
+  border-left: 6px solid var(--danger);
+  background: #fdf5f4;
+}
+.status-panel--error .status-panel__badge { background: var(--danger); }
+
+/* ---- Variant: Network (dark — backend unreachable) ---- */
+.status-panel--network {
+  border-left: 6px solid var(--domino-dark);
+  background: #f7f8fa;
+}
+.status-panel--network .status-panel__badge { background: var(--domino-dark); }
+
+/* ---- Env var checklist ---- */
+.env-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.env-checklist__row {
+  display: grid;
+  grid-template-columns: 22px 200px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 13px;
+}
+.env-checklist__row--ok      { border-left: 3px solid var(--success); }
+.env-checklist__row--missing { border-left: 3px solid var(--danger); background: #fef6f5; }
+.env-checklist__row--off     { border-left: 3px solid var(--border); opacity: 0.8; }
+.env-checklist__icon {
+  text-align: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+.env-checklist__row--ok      .env-checklist__icon { color: var(--success); }
+.env-checklist__row--missing .env-checklist__icon { color: var(--danger); }
+.env-checklist__row--off     .env-checklist__icon { color: var(--text-muted); }
+.env-checklist__key {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+}
+.env-checklist__label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.env-checklist__label em { font-style: italic; opacity: 0.8; }
+.env-checklist__value {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: #eef2f7;
+  padding: 2px 7px;
+  border-radius: 3px;
+  color: #0d3a6e;
+  justify-self: end;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.env-checklist__missing {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+  font-style: italic;
+  justify-self: end;
+}
+
+@media (max-width: 900px) {
+  .env-checklist__row {
+    grid-template-columns: 22px 1fr;
+    grid-auto-rows: auto;
+  }
+  .env-checklist__label, .env-checklist__value, .env-checklist__missing {
+    grid-column: 2 / -1;
+    justify-self: start;
+  }
+}
+
+/* ---- Meta bar demo pill ---- */
+.meta-demo-pill {
+  background: var(--warning);
+  color: #2a1a00;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 4px;
+}
+
+/* ---- Demo-mode body indicator (thin amber stripe under the top bar) ---- */
+body.is-demo-mode .app-header { box-shadow: inset 0 -3px 0 var(--warning), 0 2px 6px rgba(0,0,0,0.25); }
+
 /* ---- Context bar (auto-filled, read-only) ---- */
 .context-bar {
   display: flex;
@@ -370,9 +606,6 @@ input:focus, select:focus {
 .alert-warning { background: #fff8e1; border-color: var(--warning); color: #7a5200; }
 .alert-error   { background: #fdecea; border-color: var(--danger);  color: #7b1a14; }
 .alert-info    { background: #e8f4fd; border-color: var(--accent);  color: #0d3a6e; }
-.alert-demo    { background: #f0f7ff; border-color: #7ab3e8;        color: #0d3a6e;
-                 border-left-width: 4px; border-left-style: solid;
-                 border-radius: var(--radius); padding: 12px 16px; font-size: 13px; }
 
 /* ---- Meta bar ---- */
 .meta-bar {
