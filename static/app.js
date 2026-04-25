@@ -310,7 +310,7 @@ function renderStatusDetails(mode, data, env) {
               <tr style="border-bottom:1px solid #e8ecf0;">
                 <td style="padding:8px 12px;"><code>ONTAP_USERNAME</code></td>
                 <td style="padding:8px 12px;"><code>vsadmin</code></td>
-                <td style="padding:8px 12px;font-size:12px;color:#6b7d8f;">SVM admin user (or <code>fsxadmin</code> for filesystem-level access)</td>
+                <td style="padding:8px 12px;font-size:12px;color:#6b7d8f;">SVM admin user — use the primary SVM admin credentials, <strong>not</strong> the filesystem admin</td>
               </tr>
               <tr style="border-bottom:1px solid #e8ecf0;">
                 <td style="padding:8px 12px;"><code>ONTAP_VERIFY_SSL</code></td>

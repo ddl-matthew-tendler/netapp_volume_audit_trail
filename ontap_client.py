@@ -60,7 +60,14 @@ class OntapClient:
 
     def list_svms(self) -> list[dict]:
         """Return list of {name, uuid} for all data SVMs."""
-        data = self._get("/svm/svms", params={"type": "data", "fields": "name,uuid"})
+        try:
+            data = self._get("/svm/svms", params={"type": "data", "fields": "name,uuid"})
+        except OntapError as exc:
+            # FSxN doesn't support the "type" filter — fall back without it
+            if "Unexpected argument" in str(exc):
+                data = self._get("/svm/svms", params={"fields": "name,uuid"})
+            else:
+                raise
         return data.get("records", [])
 
     def get_svm_uuid(self, svm_name: str) -> str:
