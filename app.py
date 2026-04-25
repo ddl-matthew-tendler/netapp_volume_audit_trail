@@ -475,76 +475,102 @@ def query_events():
     except OntapError as exc:
         return jsonify({"error": str(exc)}), 500
 
-    # Resolve SVM UUID
-    try:
-        svm_uuid = client.get_svm_uuid(body["svm_name"])
-    except OntapError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    # Confirm auditing is enabled and using EVTX format
-    try:
-        audit_cfg = client.get_audit_config(svm_uuid)
-        if not audit_cfg.get("enabled", False):
-            return jsonify({
-                "error": f"Auditing is not enabled on SVM '{body['svm_name']}'. "
-                         "Ask your administrator to enable it: "
-                         "vserver audit enable -vserver <svm>"
-            }), 400
-        log_format = audit_cfg.get("log", {}).get("format", audit_cfg.get("format", "evtx"))
-        if log_format.lower() != "evtx":
-            return jsonify({
-                "error": f"Audit log format on SVM '{body['svm_name']}' is '{log_format}', "
-                         "but this app requires EVTX format. Ask your administrator to "
-                         f"reconfigure: vserver audit modify -vserver {body['svm_name']} -format evtx"
-            }), 400
-    except OntapError as exc:
-        return jsonify({"error": f"Could not read audit config: {exc}"}), 400
-
-    # List EVTX log files
-    try:
-        log_files = client.list_audit_log_files(svm_uuid)
-    except OntapError as exc:
-        return jsonify({"error": f"Failed to list audit log files: {exc}"}), 400
-
-    if not log_files:
-        return jsonify({
-            "meta": _build_meta(ctx, body["svm_name"], start_dt, end_dt, 0, 0),
-            "events": [],
-            "warning": "No audit log files found for this SVM.",
-        })
-
-    relevant   = _filter_files_by_time(log_files, start_dt, end_dt)
-    to_fetch   = relevant[:max_files]
-    skipped    = len(relevant) - len(to_fetch)
-
-    if not to_fetch:
-        return jsonify({
-            "meta": _build_meta(ctx, body["svm_name"], start_dt, end_dt, 0, 0),
-            "events": [],
-            "warning": "No audit log files found within the requested time window.",
-        })
-
-    # Download and parse
-    all_events, parse_errors = [], []
-    for f in to_fetch:
+    # Resolve which SVMs to query
+    svm_name = body["svm_name"]
+    if svm_name == "__all__":
         try:
-            raw   = client.download_audit_log_file(svm_uuid, f["name"])
-            evts  = parse_smb_events(raw, path_prefix, start_dt, end_dt)
-            for ev in evts:
-                ev["svm_name"] = body["svm_name"]
-            all_events.extend(evts)
-        except Exception as exc:
-            parse_errors.append(f"{f['name']}: {exc}")
+            svms_to_query = [(s["name"], s["uuid"]) for s in client.list_svms()]
+        except OntapError as exc:
+            return jsonify({"error": f"Could not list SVMs: {exc}"}), 400
+        svm_label = "All SVMs"
+    else:
+        try:
+            svm_uuid = client.get_svm_uuid(svm_name)
+            svms_to_query = [(svm_name, svm_uuid)]
+        except OntapError as exc:
+            return jsonify({"error": str(exc)}), 400
+        svm_label = svm_name
+
+    # EVTX parsing is only needed for real ONTAP queries
+    if not EVTX_AVAILABLE:
+        return jsonify({
+            "error": "python-evtx is not installed in this environment. "
+                     "Add it to requirements.txt and redeploy."
+        }), 500
+
+    all_events, parse_errors = [], []
+    total_files_checked = 0
+    total_files_skipped = 0
+
+    for query_svm_name, query_svm_uuid in svms_to_query:
+        # Confirm auditing is enabled and using EVTX format
+        try:
+            audit_cfg = client.get_audit_config(query_svm_uuid)
+            if not audit_cfg.get("enabled", False):
+                if len(svms_to_query) == 1:
+                    return jsonify({
+                        "error": f"Auditing is not enabled on SVM '{query_svm_name}'. "
+                                 "Ask your administrator to enable it: "
+                                 f"vserver audit enable -vserver {query_svm_name}"
+                    }), 400
+                continue  # skip this SVM in multi-SVM mode
+            log_format = audit_cfg.get("log", {}).get("format", audit_cfg.get("format", "evtx"))
+            if log_format.lower() != "evtx":
+                if len(svms_to_query) == 1:
+                    return jsonify({
+                        "error": f"Audit log format on SVM '{query_svm_name}' is '{log_format}', "
+                                 "but this app requires EVTX format. Ask your administrator to "
+                                 f"reconfigure: vserver audit modify -vserver {query_svm_name} -format evtx"
+                    }), 400
+                continue
+        except OntapError as exc:
+            if len(svms_to_query) == 1:
+                return jsonify({"error": f"Could not read audit config: {exc}"}), 400
+            continue  # skip this SVM in multi-SVM mode
+
+        # List EVTX log files
+        try:
+            log_files = client.list_audit_log_files(query_svm_uuid)
+        except OntapError as exc:
+            if len(svms_to_query) == 1:
+                return jsonify({"error": f"Failed to list audit log files: {exc}"}), 400
+            continue
+
+        if not log_files:
+            continue
+
+        relevant = _filter_files_by_time(log_files, start_dt, end_dt)
+        to_fetch = relevant[:max_files]
+        total_files_skipped += len(relevant) - len(to_fetch)
+        total_files_checked += len(to_fetch)
+
+        # Download and parse
+        for f in to_fetch:
+            try:
+                raw  = client.download_audit_log_file(query_svm_uuid, f["name"])
+                evts = parse_smb_events(raw, path_prefix, start_dt, end_dt)
+                for ev in evts:
+                    ev["svm_name"] = query_svm_name
+                all_events.extend(evts)
+            except Exception as exc:
+                parse_errors.append(f"{f['name']}: {exc}")
+
+    if not total_files_checked and not all_events:
+        return jsonify({
+            "meta": _build_meta(ctx, svm_label, start_dt, end_dt, 0, 0),
+            "events": [],
+            "warning": "No audit log files found. Auditing may not be configured on the selected SVM(s).",
+        })
 
     all_events.sort(key=lambda e: e["timestamp"], reverse=True)
     serialized = [_serialize(e) for e in all_events]
 
     response = {
         "meta": _build_meta(
-            ctx, body["svm_name"], start_dt, end_dt,
-            files_checked=len(to_fetch),
+            ctx, svm_label, start_dt, end_dt,
+            files_checked=total_files_checked,
             events_found=len(serialized),
-            files_skipped=skipped,
+            files_skipped=total_files_skipped,
         ),
         "events": serialized,
     }
