@@ -1,5 +1,5 @@
 """
-Pytest suite for the Domino NetApp SMB Audit Viewer.
+Pytest suite for the Domino NetApp File Access Audit Viewer.
 
 Three test layers:
   1. Unit tests — evtx_parser and demo_data in isolation
@@ -99,7 +99,7 @@ class TestDemoData:
         events = generate_demo_events("svm-test", "2026-01-01", "2026-01-07")
         required = {"event_id", "event_type", "timestamp", "timestamp_str",
                     "user", "domain", "client_ip", "object_path",
-                    "share_name", "access_operations", "result"}
+                    "share_name", "access_operations", "result", "protocol"}
         for ev in events:
             assert required.issubset(ev.keys()), f"Missing fields in: {ev}"
 
@@ -140,7 +140,7 @@ class TestDemoMode:
     def test_homepage_loads(self, demo_app):
         r = demo_app.get("/")
         assert r.status_code == 200
-        assert b"NetApp SMB Audit Viewer" in r.data
+        assert b"NetApp File Access Audit Viewer" in r.data
 
     def test_init_returns_svms(self, demo_app):
         r    = demo_app.get("/api/init")
@@ -254,6 +254,10 @@ class TestWithMockedOntap:
         ]
         mock.get_svm_uuid.return_value    = svm_uuid
         mock.get_audit_config.return_value = {"enabled": True}
+        mock.get_ontap_version.return_value = {"full": "9.14.1", "generation": 9, "major": 14, "minor": 1}
+        mock.list_volumes.return_value    = [
+            {"name": "vol1", "svm": {"name": "svm-test"}, "size": 1073741824, "style": "flexvol"}
+        ]
 
         now      = datetime.now(timezone.utc)
         day_ago  = (now - timedelta(days=1)).isoformat().replace("+00:00", "Z")

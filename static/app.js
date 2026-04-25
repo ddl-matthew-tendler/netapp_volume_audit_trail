@@ -1,5 +1,5 @@
 /**
- * Domino NetApp SMB Audit Viewer — Frontend Logic
+ * Domino NetApp File Access Audit Viewer — Frontend Logic
  *
  * On page load:
  *   1. Call /api/init — gets SVMs, cluster name, Domino context automatically
@@ -218,6 +218,7 @@ function renderStatusDetails(mode, data, env) {
           <li><strong>Cluster:</strong> ${esc(data.cluster_name || "—")}</li>
           <li><strong>ONTAP version:</strong> ${esc(data.ontap_version || "unknown")}</li>
           <li><strong>Storage VMs discovered:</strong> ${(data.svms || []).length}</li>
+          <li><strong>Protocols supported:</strong> SMB/CIFS and NFS</li>
           <li><strong>Credentials detected from environment:</strong></li>
         </ul>
         ${envRows}
@@ -266,36 +267,110 @@ function renderStatusDetails(mode, data, env) {
     </div>
 
     <div class="status-section">
-      <h4 class="status-section__title">How to connect to a real NetApp cluster</h4>
+      <h4 class="status-section__title">How to connect to a real NetApp cluster (FSxN or on-prem)</h4>
+      <p style="font-size:13px;margin-bottom:12px;">Follow these steps exactly — no terminal needed. Everything is done through the Domino web UI.</p>
+
       <ol class="status-steps">
         <li>
-          <strong>Store the password as a User Environment Variable</strong> (private, Vault-backed).<br>
-          Click your avatar (top-right) → <strong>Account Settings</strong> → <strong>User Environment Variables</strong> → <strong>Add variable</strong>.<br>
-          Name: <code>ONTAP_PASSWORD</code> — Value: your ONTAP password.
+          <strong>Step 1 — Store the password as a User Environment Variable</strong> (private, Vault-backed).<br>
+          <ol style="margin-top:6px;padding-left:20px;">
+            <li>Click your <strong>avatar</strong> (top-right corner of Domino).</li>
+            <li>Click <strong>Account Settings</strong>.</li>
+            <li>In the left sidebar, click <strong>User Environment Variables</strong>.</li>
+            <li>Click <strong>+ Add Variable</strong>.</li>
+            <li>Name: <code>ONTAP_PASSWORD</code></li>
+            <li>Value: <em>paste your SVM admin password here</em></li>
+            <li>Click <strong>Save</strong>.</li>
+          </ol>
+          <p class="status-hint" style="margin-top:6px;">User Environment Variables are encrypted and never visible to other users or in logs. This is the most secure way to store the password.</p>
         </li>
+
         <li>
-          <strong>Store the cluster IP and username at the Project level.</strong><br>
-          Open this project → <strong>Settings</strong> tab → <strong>Environment variables</strong> section. Add:
-          <ul>
-            <li><code>ONTAP_CLUSTER_IP</code> — e.g. <code>192.168.1.10</code></li>
-            <li><code>ONTAP_USERNAME</code> — e.g. <code>domino-readonly</code></li>
+          <strong>Step 2 — Store the cluster IP and username at the Project level.</strong><br>
+          <ol style="margin-top:6px;padding-left:20px;">
+            <li>Navigate to your project: <strong>netapp_volume_audit_trail</strong>.</li>
+            <li>Click <strong>Settings</strong> in the left sidebar.</li>
+            <li>Scroll down to the <strong>Environment Variables</strong> section.</li>
+            <li>Click <strong>+ Add Variable</strong> and add each of these:</li>
+          </ol>
+          <table style="margin:10px 0;font-size:13px;border-collapse:collapse;width:100%;">
+            <thead>
+              <tr style="background:#f0f4fa;border-bottom:2px solid #d8dde6;">
+                <th style="padding:8px 12px;text-align:left;font-weight:700;">Variable Name</th>
+                <th style="padding:8px 12px;text-align:left;font-weight:700;">Value</th>
+                <th style="padding:8px 12px;text-align:left;font-weight:700;">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #e8ecf0;">
+                <td style="padding:8px 12px;"><code>ONTAP_CLUSTER_IP</code></td>
+                <td style="padding:8px 12px;"><code>10.0.35.160</code></td>
+                <td style="padding:8px 12px;font-size:12px;color:#6b7d8f;">Management LIF of your FSxN SVM</td>
+              </tr>
+              <tr style="border-bottom:1px solid #e8ecf0;">
+                <td style="padding:8px 12px;"><code>ONTAP_USERNAME</code></td>
+                <td style="padding:8px 12px;"><code>vsadmin</code></td>
+                <td style="padding:8px 12px;font-size:12px;color:#6b7d8f;">SVM admin user (or <code>fsxadmin</code> for filesystem-level access)</td>
+              </tr>
+              <tr style="border-bottom:1px solid #e8ecf0;">
+                <td style="padding:8px 12px;"><code>ONTAP_VERIFY_SSL</code></td>
+                <td style="padding:8px 12px;"><code>false</code></td>
+                <td style="padding:8px 12px;font-size:12px;color:#6b7d8f;">Optional — set to <code>true</code> only if using a trusted TLS cert</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="status-hint">For the <strong>life-sciences-demo</strong> environment, the FSxN filesystem is <code>fs-031fcf7d53ab65bb8</code> in <code>us-west-2</code>, SVM name is <code>demo-ls102402-svm</code>, and the management LIF is <code>10.0.35.160</code>.</p>
+        </li>
+
+        <li>
+          <strong>Step 3 — Restart this app so it picks up the new variables.</strong><br>
+          <ol style="margin-top:6px;padding-left:20px;">
+            <li>Go to the project's left sidebar and click <strong>App</strong> (or <strong>Publish</strong> depending on your Domino version).</li>
+            <li>Click <strong>Stop</strong> on the running app.</li>
+            <li>Once stopped, click <strong>Publish</strong> (or <strong>Start</strong>) to restart it.</li>
+            <li>Wait for the app to finish starting (usually 30–60 seconds).</li>
+            <li>Reload this page in your browser.</li>
+          </ol>
+          <p class="status-hint">Simply reloading this page without restarting the app will <strong>not</strong> pick up new environment variables. The app reads them once at startup.</p>
+        </li>
+
+        <li>
+          <strong>Step 4 — Verify the connection.</strong><br>
+          After the restart, this panel should flip to <span style="color:#18a058;font-weight:700;">green "LIVE"</span> mode.
+          If it stays on demo or shows an error, check:
+          <ul style="margin-top:4px;padding-left:20px;">
+            <li>Is the password correct? (Re-enter it in Account Settings if unsure)</li>
+            <li>Is the cluster IP reachable from Domino's network? (<code>10.0.35.160</code>)</li>
+            <li>Does the account have permission to read audit data?</li>
           </ul>
-          (Optional: <code>ONTAP_VERIFY_SSL</code> = <code>true</code> if your cluster uses a trusted TLS cert.)
-        </li>
-        <li>
-          <strong>Restart this app so it re-reads the variables.</strong><br>
-          Go to the project's <strong>Apps</strong> tab → <strong>Stop</strong>, then <strong>Publish</strong> (or <strong>Restart</strong>).
-          Reloading this page alone will <em>not</em> pick up new environment variables.
-        </li>
-        <li>
-          <strong>Come back to this page.</strong> When the page reloads after the app restart, this panel will flip to green "Live Mode — Connected to ONTAP" and list every credential it detected.
         </li>
       </ol>
     </div>
 
+    <div class="status-section">
+      <h4 class="status-section__title">FSxN-specific: Ensure auditing is enabled</h4>
+      <p style="font-size:13px;">For this app to show real file access events, <strong>auditing must be enabled</strong> on the SVM. If you see a "no audit log files" message after connecting, ask your NetApp / AWS administrator to enable it:</p>
+      <pre class="status-error-detail" style="background:#0f2035;color:#a8d0f0;">
+# Connect to the FSxN CLI (via SSH or AWS CloudShell):
+ssh fsxadmin@10.0.35.160
+
+# Create the audit configuration (one-time setup):
+vserver audit create -vserver demo-ls102402-svm \\
+  -destination /vol/audit_log \\
+  -format evtx \\
+  -rotate-size 100MB
+
+# Enable auditing:
+vserver audit enable -vserver demo-ls102402-svm
+
+# Verify:
+vserver audit show -vserver demo-ls102402-svm</pre>
+      <p class="status-hint">The destination volume (<code>/vol/audit_log</code>) must exist on the SVM. NFS file access events are captured automatically once auditing is enabled — no CIFS/SMB server is required.</p>
+    </div>
+
     <div class="status-section status-section--muted">
-      <h4 class="status-section__title">Already restarted the app?</h4>
-      <p>Click below to re-check. If the panel stays on demo/error after a restart, at least one variable is still missing or incorrect — the checklist above will show which one.</p>
+      <h4 class="status-section__title">Already set the variables and restarted?</h4>
+      <p>Click below to re-check. If this panel still shows demo/error after a restart, at least one variable is still missing or incorrect — the checklist above will show which one.</p>
       <button type="button" class="btn btn-secondary btn-sm" id="status-reload-btn">Reload and re-check</button>
     </div>
   `;
@@ -337,7 +412,7 @@ let DEMO_MODE_CLIENT = false;
 function applyDemoIndicators(isDemo) {
   DEMO_MODE_CLIENT = isDemo;
   document.body.classList.toggle("is-demo-mode", isDemo);
-  const base = "NetApp SMB Audit Viewer";
+  const base = "NetApp File Access Audit Viewer";
   document.title = isDemo ? `[DEMO] ${base}` : base;
 }
 
@@ -449,10 +524,11 @@ function renderPreflight(checks) {
     return;
   }
 
-  const icons = { pass: "&#10003;", warn: "&#9888;", fail: "&#10007;", error: "&#10007;" };
+  const icons = { pass: "&#10003;", warn: "&#9888;", fail: "&#10007;", error: "&#10007;", info: "&#8505;" };
   const fails  = checks.filter(c => c.status === "fail" || c.status === "error").length;
   const warns  = checks.filter(c => c.status === "warn").length;
   const passes = checks.filter(c => c.status === "pass").length;
+  const infos  = checks.filter(c => c.status === "info").length;
 
   if (fails > 0) {
     preflightSummary.textContent = `${fails} issue(s) need attention`;
@@ -464,7 +540,7 @@ function renderPreflight(checks) {
     preflightSummary.textContent = `All passed, ${warns} warning(s)`;
     preflightSummary.className   = "preflight-summary has-issues";
   } else {
-    preflightSummary.textContent = `All ${passes} check(s) passed`;
+    preflightSummary.textContent = `All ${passes} check(s) passed` + (infos > 0 ? `, ${infos} info` : "");
     preflightSummary.className   = "preflight-summary all-pass";
   }
 
@@ -594,14 +670,18 @@ liveBtn.addEventListener("click", async () => {
     }
 
     const sessions = data.sessions || [];
+    const note = data.note || "";
+
     if (!sessions.length) {
       sessionsBody.innerHTML =
-        `<p>No active SMB sessions found for <strong>${esc(svm)}</strong>.</p>`;
+        `<p>No active sessions found for <strong>${esc(svm)}</strong>.</p>` +
+        (note ? `<p style="font-size:12px;color:#6b7d8f;margin-top:8px;">${esc(note)}</p>` : "");
       return;
     }
 
     sessionsBody.innerHTML = `
       <p class="sessions-meta">${sessions.length} active session(s) — live snapshot</p>
+      ${note ? `<p style="font-size:12px;color:#6b7d8f;margin-bottom:12px;">${esc(note)}</p>` : ""}
       <div class="table-scroll">
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead style="background:#f8f9fb;">
@@ -609,6 +689,7 @@ liveBtn.addEventListener("click", async () => {
             <th style="${thS()}">User</th>
             <th style="${thS()}">Client IP</th>
             <th style="${thS()}">SVM</th>
+            <th style="${thS()}">Protocol</th>
             <th style="${thS()}">Duration</th>
             <th style="${thS()}">Open Files</th>
           </tr>
@@ -619,6 +700,7 @@ liveBtn.addEventListener("click", async () => {
               <td style="${tdS()}"><strong>${esc(s.user || "—")}</strong></td>
               <td style="${tdS()};font-family:monospace">${esc(s.client_ip || "—")}</td>
               <td style="${tdS()}">${esc(s.svm?.name || "—")}</td>
+              <td style="${tdS()}">${protocolBadge(s.protocol || "SMB")}</td>
               <td style="${tdS()}">${esc(s.connected_duration || "—")}</td>
               <td style="${tdS()}">${s.open_files ?? "—"}</td>
             </tr>`).join("")}
@@ -650,6 +732,7 @@ function rowHtml(ev) {
   return `<tr>
     <td style="white-space:nowrap">${esc(ev.timestamp_str)}</td>
     <td>${esc(ev.svm_name || "—")}</td>
+    <td>${protocolBadge(ev.protocol || "SMB")}</td>
     <td>${eventBadge(ev.event_type)}</td>
     <td><strong>${esc(ev.user)}</strong></td>
     <td>${esc(ev.domain)}</td>
@@ -659,6 +742,11 @@ function rowHtml(ev) {
     <td>${esc(ev.access_operations)}</td>
     <td>${resultBadge(ev.result)}</td>
   </tr>`;
+}
+
+function protocolBadge(proto) {
+  const cls = proto === "NFS" ? "badge-nfs" : "badge-smb";
+  return `<span class="badge ${cls}">${esc(proto)}</span>`;
 }
 
 function eventBadge(type) {
@@ -687,7 +775,7 @@ tableSearch.addEventListener("input", () => renderTable(allEvents));
 function applyFilter(events, q) {
   q = (q || "").toLowerCase().trim();
   if (!q) return events;
-  const cols = ["timestamp_str", "svm_name", "event_type", "user", "domain",
+  const cols = ["timestamp_str", "svm_name", "protocol", "event_type", "user", "domain",
                 "client_ip", "object_path", "share_name", "access_operations", "result"];
   return events.filter(ev => cols.some(c => (ev[c] || "").toLowerCase().includes(q)));
 }
@@ -719,7 +807,7 @@ function applySort(events, col, dir) {
 // -----------------------------------------------------------------------
 exportCsvBtn.addEventListener("click", () => {
   if (!filteredEvents.length) return;
-  const cols = ["timestamp_str", "svm_name", "event_type", "user", "domain",
+  const cols = ["timestamp_str", "svm_name", "protocol", "event_type", "user", "domain",
                 "client_ip", "object_path", "share_name", "access_operations", "result"];
   const csv  = [cols.join(","),
     ...filteredEvents.map(ev =>
@@ -727,7 +815,7 @@ exportCsvBtn.addEventListener("click", () => {
   ].join("\n");
   const a    = Object.assign(document.createElement("a"), {
     href:     URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
-    download: `smb_audit_${currentSvm}_${isoDate(new Date())}.csv`,
+    download: `file_access_audit_${currentSvm}_${isoDate(new Date())}.csv`,
   });
   a.click();
 });
@@ -749,6 +837,7 @@ function renderMetaBar(meta) {
     ${metaItem("Queried by",    meta.queried_by)}
     ${metaItem("SVM",           meta.svm_name)}
     ${metaItem("Date range",    `${meta.query_start} → ${meta.query_end}`)}
+    ${metaItem("Protocols",     meta.protocol_filter || "SMB/CIFS and NFS")}
     ${metaItem("Files checked", meta.files_checked)}
     <div class="meta-item">
       <span class="meta-label">Events found</span>

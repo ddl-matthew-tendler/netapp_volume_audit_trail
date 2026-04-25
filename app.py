@@ -1,13 +1,14 @@
 """
-Domino NetApp SMB Audit Viewer
-==============================
-A Domino App for administrators to query NetApp ONTAP audit logs for SMB/CIFS
-file-access events.  No data is stored in Domino — results are pulled from
-ONTAP on demand and displayed in the browser only.
+Domino NetApp File Access Audit Viewer
+=======================================
+A Domino App for administrators to query NetApp ONTAP audit logs for
+file-access events over both SMB/CIFS and NFS protocols.  No data is
+stored in Domino — results are pulled from ONTAP on demand and displayed
+in the browser only.
 
 Required environment variables (set once by IT admin when publishing the app):
-  ONTAP_CLUSTER_IP   Cluster management IP or hostname  e.g. "192.168.1.10"
-  ONTAP_USERNAME     ONTAP account with audit read access e.g. "domino-readonly"
+  ONTAP_CLUSTER_IP   Cluster management IP or hostname  e.g. "10.0.35.160"
+  ONTAP_USERNAME     ONTAP account with audit read access e.g. "vsadmin"
   ONTAP_PASSWORD     Password for the above account
 
 Optional environment variables:
@@ -253,7 +254,7 @@ def preflight():
             svms_to_check = []
 
     for svm in svms_to_check:
-        # 2. CIFS/SMB server configured
+        # 2. CIFS/SMB server — informational, not a hard requirement for NFS
         try:
             cifs = client.check_cifs_server(svm)
             if cifs:
@@ -269,16 +270,17 @@ def preflight():
                 checks.append({
                     "id": f"cifs_server_{svm}",
                     "label": f"CIFS/SMB server on {svm}",
-                    "status": "fail",
-                    "detail": "No CIFS server found. SMB auditing requires a CIFS server "
-                              "(vserver cifs create).",
+                    "status": "info",
+                    "detail": "No CIFS server found — this SVM may be NFS-only. "
+                              "NFS file access auditing still works without a CIFS server.",
                 })
         except OntapError as exc:
             checks.append({
                 "id": f"cifs_server_{svm}",
                 "label": f"CIFS/SMB server on {svm}",
-                "status": "error",
-                "detail": str(exc),
+                "status": "info",
+                "detail": f"Could not check CIFS status: {exc}. "
+                          "This is normal for NFS-only SVMs.",
             })
 
         # 3. Auditing enabled + EVTX format
@@ -332,8 +334,7 @@ def preflight():
                             "label": f"Audit log files on {svm}",
                             "status": "warn",
                             "detail": "No audit log files found yet. Files are created "
-                                      "after the first audited SMB event occurs. Verify that "
-                                      "SACLs are configured on files/folders to be audited.",
+                                      "after the first audited file access event occurs.",
                         })
                 except OntapError as exc:
                     error_str = str(exc)
@@ -383,6 +384,12 @@ def _demo_preflight_checks(svm_name: str) -> list[dict]:
                 "detail": f"CIFS server 'CORP-NAS' configured",
             },
             {
+                "id": f"nfs_server_{svm}",
+                "label": f"NFS on {svm}",
+                "status": "pass",
+                "detail": "NFS enabled — NFS file access events will be captured",
+            },
+            {
                 "id": f"audit_enabled_{svm}",
                 "label": f"Auditing enabled on {svm}",
                 "status": "pass",
@@ -405,7 +412,7 @@ def _demo_preflight_checks(svm_name: str) -> list[dict]:
 @app.route("/api/query", methods=["POST"])
 def query_events():
     """
-    Query ONTAP audit logs for SMB events.
+    Query ONTAP audit logs for file access events (SMB and NFS).
 
     Accepts (from the simplified form — no credentials needed from user):
       svm_name          SVM to query (selected from dropdown)
@@ -558,16 +565,29 @@ def live_sessions():
 
     if DEMO_MODE:
         return jsonify({"sessions": [
-            {"user": "j.smith",    "client_ip": "10.0.1.45",  "svm": {"name": body["svm_name"]}, "connected_duration": "PT2H14M", "open_files": 3},
-            {"user": "m.johnson",  "client_ip": "10.0.1.112", "svm": {"name": body["svm_name"]}, "connected_duration": "PT47M",   "open_files": 1},
-            {"user": "svc-domino", "client_ip": "10.0.2.10",  "svm": {"name": body["svm_name"]}, "connected_duration": "P1DT3H",  "open_files": 0},
+            {"user": "j.smith",    "client_ip": "10.0.1.45",  "svm": {"name": body["svm_name"]}, "connected_duration": "PT2H14M", "open_files": 3, "protocol": "SMB"},
+            {"user": "m.johnson",  "client_ip": "10.0.1.112", "svm": {"name": body["svm_name"]}, "connected_duration": "PT47M",   "open_files": 1, "protocol": "SMB"},
+            {"user": "domino-svc", "client_ip": "10.0.2.50",  "svm": {"name": body["svm_name"]}, "connected_duration": "P1DT3H",  "open_files": 2, "protocol": "NFS"},
+            {"user": "svc-domino", "client_ip": "10.0.2.10",  "svm": {"name": body["svm_name"]}, "connected_duration": "P1DT3H",  "open_files": 0, "protocol": "SMB"},
         ], "demo_mode": True})
 
     try:
         client   = _get_client()
         sessions = client.list_cifs_sessions(body["svm_name"])
-        return jsonify({"sessions": sessions})
+        # Tag sessions as SMB since they come from the CIFS sessions endpoint
+        for s in sessions:
+            s["protocol"] = "SMB"
+        return jsonify({"sessions": sessions, "note": "Only SMB/CIFS sessions are shown. NFS does not have a comparable live sessions API."})
     except OntapError as exc:
+        # This is expected for NFS-only SVMs — return gracefully
+        error_str = str(exc)
+        if "404" in error_str or "not found" in error_str.lower() or "not supported" in error_str.lower():
+            return jsonify({
+                "sessions": [],
+                "note": "No CIFS/SMB server configured on this SVM. "
+                        "Live sessions are only available for SMB connections. "
+                        "NFS-mounted volumes do not expose a live sessions API."
+            })
         return jsonify({"error": str(exc)}), 400
 
 
@@ -607,7 +627,7 @@ def _build_meta(ctx, svm_name, start_dt, end_dt, files_checked,
         "files_skipped_due_to_cap": files_skipped,
         "events_found":             events_found,
         "generated_at":             datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "protocol_filter":          "SMB/CIFS only",
+        "protocol_filter":          "SMB/CIFS and NFS",
     }
 
 

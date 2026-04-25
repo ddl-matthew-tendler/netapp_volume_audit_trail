@@ -1,5 +1,5 @@
 /* ============================================================
-   Domino NetApp SMB Audit Viewer — Styles
+   Domino NetApp File Access Audit Viewer — Styles
    Design: clean, data-dense, matches Domino's dark-accent palette
    ============================================================ */
 
@@ -342,6 +342,7 @@ body.is-demo-mode .app-header { box-shadow: inset 0 -3px 0 var(--warning), 0 2px
 .preflight-item.status-warn   { border-left: 3px solid var(--warning); background: #fffcf5; }
 .preflight-item.status-fail   { border-left: 3px solid var(--danger);  background: #fef6f5; }
 .preflight-item.status-error  { border-left: 3px solid var(--danger);  background: #fef6f5; }
+.preflight-item.status-info   { border-left: 3px solid var(--accent); background: #f0f6ff; }
 .preflight-icon {
   flex-shrink: 0;
   width: 18px;
@@ -721,6 +722,8 @@ table#events-table tbody tr:hover { background: #f6f9ff; }
 .badge-danger  { background: #fdecea; color: #b71c1c; }
 .badge-info    { background: #e8f0fe; color: #1a56cc; }
 .badge-warn    { background: #fff3e0; color: #e65100; }
+.badge-smb     { background: #e8f0fe; color: #1a56cc; }
+.badge-nfs     { background: #e6f7ee; color: #14713d; }
 
 /* ---- Table footer ---- */
 .table-footer {

@@ -1,21 +1,22 @@
 """
-EVTX audit log parser for NetApp ONTAP SMB/CIFS file access events.
+EVTX audit log parser for NetApp ONTAP file access events (SMB/CIFS and NFS).
 
 ONTAP writes Windows-format EVTX files for file auditing.  This module
-parses those files and returns only events that represent SMB/CIFS file
-access, filtering by event ID and (optionally) by path prefix.
+parses those files and returns events that represent file access over
+both SMB/CIFS and NFS protocols, filtering by event ID and (optionally)
+by path prefix.
 
 Relevant Windows Security event IDs produced by ONTAP:
   4656 – A handle to an object was requested           (file open attempt)
   4663 – An attempt was made to access an object       (actual read/write/delete)
   4660 – An object was deleted
   4670 – Permissions on an object were changed
-  5140 – A network share object was accessed           (share-level)
-  5145 – A network share object was checked            (share access check)
+  5140 – A network share object was accessed           (share-level, SMB only)
+  5145 – A network share object was checked            (share access check, SMB only)
 
-ONTAP does NOT set ProcessName the way Windows does; instead it records the
-SMB client's IP address and the user's domain account.  We surface those fields
-and map the AccessMask to human-readable operation types.
+ONTAP uses the same event IDs for both NFS and SMB operations.  The protocol
+is detected by examining whether SMB-specific fields (ShareName, Windows
+domain) are present.  NFS events carry UNIX usernames and lack share info.
 """
 
 import io
@@ -30,10 +31,10 @@ except ImportError:
     EVTX_AVAILABLE = False
 
 
-# Event IDs we care about for SMB file-level activity
-SMB_EVENT_IDS = {4656, 4660, 4663, 4670, 5140, 5145}
+# Event IDs we care about for file-level activity (both SMB and NFS)
+AUDIT_EVENT_IDS = {4656, 4660, 4663, 4670, 5140, 5145}
 
-# Human-readable labels for common ONTAP SMB access masks / access list values
+# Human-readable labels for common ONTAP access masks / access list values
 ACCESS_MAP = {
     "%%4416": "ReadData",
     "%%4417": "WriteData",
@@ -60,6 +61,9 @@ EVENT_ID_LABELS = {
     5145: "Share Access Checked",
 }
 
+# Keep backward-compatible alias
+SMB_EVENT_IDS = AUDIT_EVENT_IDS
+
 
 def parse_smb_events(
     evtx_bytes: bytes,
@@ -68,11 +72,11 @@ def parse_smb_events(
     end_dt: datetime | None = None,
 ) -> list[dict]:
     """
-    Parse raw EVTX bytes and return a list of SMB event dicts.
+    Parse raw EVTX bytes and return a list of file access event dicts.
 
     Each dict contains:
         event_id, event_type, timestamp, user, domain, client_ip,
-        object_path, access_operations, result, raw_xml (truncated)
+        object_path, access_operations, result, protocol, raw_xml (truncated)
 
     Args:
         evtx_bytes:   Raw bytes of the .evtx file downloaded from ONTAP.
@@ -99,8 +103,8 @@ def parse_smb_events(
             if event is None:
                 continue
 
-            # --- Filter: only SMB-relevant event IDs ---
-            if event["event_id"] not in SMB_EVENT_IDS:
+            # --- Filter: only audit-relevant event IDs ---
+            if event["event_id"] not in AUDIT_EVENT_IDS:
                 continue
 
             # --- Filter: time range ---
@@ -121,6 +125,29 @@ def parse_smb_events(
     # Sort newest-first
     events.sort(key=lambda e: e["timestamp"], reverse=True)
     return events
+
+
+def _detect_protocol(data: dict) -> str:
+    """Detect whether an EVTX record represents an SMB or NFS event.
+
+    Heuristics:
+      - If ShareName is present and non-empty -> SMB
+      - If SubjectDomainName looks like a Windows domain (not empty/UNIX/NFS) -> SMB
+      - Event IDs 5140/5145 are share-level and always SMB
+      - Otherwise -> NFS
+    """
+    share = data.get("ShareName", "").strip()
+    if share and share != "-":
+        return "SMB"
+
+    domain = data.get("SubjectDomainName", data.get("SubjectDomain", "")).strip()
+    # Windows domains are typically uppercase short names; NFS events may have
+    # empty domain, "UNIX", "NFS", or a numeric UID.
+    nfs_indicators = {"", "-", "unix", "nfs", "nobody", "root"}
+    if domain.lower() not in nfs_indicators and not domain.isdigit():
+        return "SMB"
+
+    return "NFS"
 
 
 def _parse_record_xml(xml_str: str) -> dict | None:
@@ -168,6 +195,13 @@ def _parse_record_xml(xml_str: str) -> dict | None:
             if name:
                 data[name] = value
 
+    # Detect protocol
+    protocol = _detect_protocol(data)
+
+    # Override: share-level event IDs are always SMB
+    if event_id in (5140, 5145):
+        protocol = "SMB"
+
     # Map ONTAP EVTX fields to our schema
     user = data.get("SubjectUserName", data.get("SubjectUser", "-"))
     domain = data.get("SubjectDomainName", data.get("SubjectDomain", "-"))
@@ -193,6 +227,7 @@ def _parse_record_xml(xml_str: str) -> dict | None:
         "object_path": object_path,
         "access_operations": access_ops,
         "result": result,
+        "protocol": protocol,
         "share_name": data.get("ShareName", data.get("ShareLocalPath", "-")),
         "raw_data": data,  # keep full dict for advanced debug view
     }

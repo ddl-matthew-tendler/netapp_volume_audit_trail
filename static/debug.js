@@ -1,5 +1,5 @@
 /**
- * Debug Console — NetApp SMB Audit Viewer
+ * Debug Console — NetApp File Access Audit Viewer
  *
  * Captures and displays:
  *   - Every fetch/XHR call: exact resolved URL, method, status, latency, response preview
