@@ -198,6 +198,8 @@ def _parse_record_xml(xml_str: str) -> dict | None:
     system_time = time_el.get("SystemTime", "")
     try:
         ts = datetime.fromisoformat(system_time.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
     except ValueError:
         ts = datetime.now(timezone.utc)
 

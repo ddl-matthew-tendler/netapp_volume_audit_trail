@@ -31,7 +31,10 @@
       "Bash(python3 -c \"\nimport os, json\nos.environ.setdefault\\('DOMINO_PROJECT_NAME', 'test'\\)\nos.environ.setdefault\\('DOMINO_STARTING_USERNAME', 'test'\\)\nfrom app import app\n\nwith app.test_client\\(\\) as c:\n    resp = c.post\\('/api/preflight', json={'svm_name': 'demo-ls102402-svm'}\\)\n    data = resp.get_json\\(\\)\n    for check in data.get\\('checks', []\\):\n        icon = {'pass': '✓', 'warn': '⚠', 'fail': '✗', 'error': '!', 'info': 'ℹ'}\n        print\\(f\\\\\"{icon.get\\(check['status'], '?'\\)} [{check['status']}] {check['label']}\\\\\"\\)\n        print\\(f\\\\\"  {check['detail']}\\\\\"\\)\n\")",
       "Bash(grep -n -i \"demo\\\\|synthetic\\\\|sample data\\\\|DEMO DATA\\\\|fabricated\" /mnt/code/static/app.js | grep -v \"^.*//.*$\" | head -40)",
       "Bash(python3 -c \"from app import app; print\\('OK'\\)\")",
-      "Bash(sleep 10 && python3 -c \"\nimport os\nfrom ontap_client import OntapClient\n\nclient = OntapClient\\(\n    os.environ['ONTAP_CLUSTER_IP'],\n    os.environ['ONTAP_USERNAME'],\n    os.environ['ONTAP_PASSWORD'],\n    verify_ssl=False\n\\)\n\nsvm_uuid = '15aa740c-b9d4-11f0-a5ca-179689333a0f'\n\nfiles = client.list_audit_log_files\\(svm_uuid, '/'\\)\nprint\\(f'Found {len\\(files\\)} EVTX files'\\)\nfor f in files:\n    print\\(f\\\\\"  {f['name']}  size={f.get\\('size',0\\)}  modified={f.get\\('modified_time','?'\\)}\\\\\"\\)\n\")"
+      "Bash(sleep 10 && python3 -c \"\nimport os\nfrom ontap_client import OntapClient\n\nclient = OntapClient\\(\n    os.environ['ONTAP_CLUSTER_IP'],\n    os.environ['ONTAP_USERNAME'],\n    os.environ['ONTAP_PASSWORD'],\n    verify_ssl=False\n\\)\n\nsvm_uuid = '15aa740c-b9d4-11f0-a5ca-179689333a0f'\n\nfiles = client.list_audit_log_files\\(svm_uuid, '/'\\)\nprint\\(f'Found {len\\(files\\)} EVTX files'\\)\nfor f in files:\n    print\\(f\\\\\"  {f['name']}  size={f.get\\('size',0\\)}  modified={f.get\\('modified_time','?'\\)}\\\\\"\\)\n\")",
+      "Bash(git -C /mnt/code status)",
+      "Bash(git -C /mnt/code diff --stat)",
+      "Bash(python3 -c \"from app import app; print\\('App OK'\\)\" && python3 -c \"from ontap_client import OntapClient; print\\('Client OK'\\)\" && python3 -c \"from evtx_parser import parse_smb_events; print\\('Parser OK'\\)\")"
     ]
   }
 }
