@@ -90,37 +90,51 @@ def parse_smb_events(
         )
 
     events = []
-    fh = io.BytesIO(evtx_bytes)
+    # python-evtx's Evtx() accepts a file path (str) but not BytesIO directly.
+    # Write to a temp file so the library can open it normally.
+    import tempfile, os as _os
+    tmp = tempfile.NamedTemporaryFile(suffix=".evtx", delete=False)
+    try:
+        tmp.write(evtx_bytes)
+        tmp.close()
+        fh = tmp.name
+    except Exception:
+        tmp.close()
+        _os.unlink(tmp.name)
+        raise
 
-    with evtx.Evtx(fh) as log:
-        for record in log.records():
-            try:
-                xml_str = record.xml()
-                event = _parse_record_xml(xml_str)
-            except Exception:
-                continue
-
-            if event is None:
-                continue
-
-            # --- Filter: only audit-relevant event IDs ---
-            if event["event_id"] not in AUDIT_EVENT_IDS:
-                continue
-
-            # --- Filter: time range ---
-            ts = event["timestamp"]
-            if start_dt and ts < start_dt:
-                continue
-            if end_dt and ts > end_dt:
-                continue
-
-            # --- Filter: optional path prefix ---
-            if path_prefix:
-                obj_path = event.get("object_path", "")
-                if not obj_path.lower().startswith(path_prefix.lower()):
+    try:
+        with evtx.Evtx(fh) as log:
+            for record in log.records():
+                try:
+                    xml_str = record.xml()
+                    event = _parse_record_xml(xml_str)
+                except Exception:
                     continue
 
-            events.append(event)
+                if event is None:
+                    continue
+
+                # --- Filter: only audit-relevant event IDs ---
+                if event["event_id"] not in AUDIT_EVENT_IDS:
+                    continue
+
+                # --- Filter: time range ---
+                ts = event["timestamp"]
+                if start_dt and ts < start_dt:
+                    continue
+                if end_dt and ts > end_dt:
+                    continue
+
+                # --- Filter: optional path prefix ---
+                if path_prefix:
+                    obj_path = event.get("object_path", "")
+                    if not obj_path.lower().startswith(path_prefix.lower()):
+                        continue
+
+                events.append(event)
+    finally:
+        _os.unlink(fh)
 
     # Sort newest-first
     events.sort(key=lambda e: e["timestamp"], reverse=True)
@@ -151,21 +165,26 @@ def _detect_protocol(data: dict) -> str:
 
 
 def _parse_record_xml(xml_str: str) -> dict | None:
-    """Parse a single EVTX record XML string into a structured dict."""
-    ns = {
-        "evt": "http://schemas.microsoft.com/win/2004/08/events/event",
-        "": "http://schemas.microsoft.com/win/2004/08/events/event",
-    }
+    """Parse a single EVTX record XML string into a structured dict.
+
+    Supports both the Microsoft namespace (standard EVTX) and the NetApp
+    namespace used by ONTAP on FSxN.
+    """
+    # Detect which namespace is used
+    if "schemas.netapp.com" in xml_str:
+        NS = "http://schemas.netapp.com/events/event"
+    else:
+        NS = "http://schemas.microsoft.com/win/2004/08/events/event"
 
     root = ET.fromstring(xml_str)
 
     # System section
-    sys_el = root.find(".//{http://schemas.microsoft.com/win/2004/08/events/event}System")
+    sys_el = root.find(f".//{{{NS}}}System")
     if sys_el is None:
         return None
 
-    event_id_el = sys_el.find("{http://schemas.microsoft.com/win/2004/08/events/event}EventID")
-    time_el = sys_el.find("{http://schemas.microsoft.com/win/2004/08/events/event}TimeCreated")
+    event_id_el = sys_el.find(f"{{{NS}}}EventID")
+    time_el = sys_el.find(f"{{{NS}}}TimeCreated")
 
     if event_id_el is None or time_el is None:
         return None
@@ -183,9 +202,7 @@ def _parse_record_xml(xml_str: str) -> dict | None:
         ts = datetime.now(timezone.utc)
 
     # EventData section — ONTAP populates this as a flat list of Named Data elements
-    event_data_el = root.find(
-        ".//{http://schemas.microsoft.com/win/2004/08/events/event}EventData"
-    )
+    event_data_el = root.find(f".//{{{NS}}}EventData")
 
     data = {}
     if event_data_el is not None:

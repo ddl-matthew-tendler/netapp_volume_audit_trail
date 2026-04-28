@@ -3,11 +3,21 @@ NetApp ONTAP REST API client.
 
 Handles authentication, SVM discovery, audit configuration lookup,
 and EVTX audit log file retrieval.  All calls are on-demand (no caching).
+
+On FSxN, the dedicated audit log files REST API is not available, and EVTX
+files have NTFS ACLs that make them invisible to the REST file browser.
+The client falls back to reading EVTX files via SMB using smbprotocol.
 """
 
 import io
 import requests
 import urllib3
+
+try:
+    import smbclient as _smbclient
+    _SMB_AVAILABLE = True
+except ImportError:
+    _SMB_AVAILABLE = False
 
 # ONTAP uses self-signed certs in most on-prem deployments.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -22,6 +32,8 @@ class OntapClient:
     """Thin wrapper around the ONTAP REST API."""
 
     def __init__(self, cluster_ip: str, username: str, password: str, verify_ssl: bool = False):
+        self.cluster_ip = cluster_ip
+        self.password = password
         self.base_url = f"https://{cluster_ip}/api"
         self.session = requests.Session()
         self.session.auth = (username, password)
@@ -30,6 +42,7 @@ class OntapClient:
             "Accept": "application/json",
             "Content-Type": "application/json",
         })
+        self._smb_registered = False
 
     # ------------------------------------------------------------------
     # Connectivity
@@ -120,58 +133,77 @@ class OntapClient:
         except OntapError as exc:
             if "API not found" not in str(exc) and "404" not in str(exc):
                 raise
-            # Fallback: browse the audit destination volume for .evtx files
-            return self._list_evtx_via_volume_browser(svm_uuid, audit_log_path)
+            # Fallback: read EVTX files via SMB (necessary on FSxN)
+            return self._list_evtx_via_smb(audit_log_path)
 
-    def _list_evtx_via_volume_browser(self, svm_uuid: str, audit_log_path: str) -> list[dict]:
-        """
-        List .evtx files by finding the volume that hosts the audit log path
-        and browsing it with the /storage/volumes/{uuid}/files API.
-        """
-        # Find the volume whose NAS path matches the audit destination
-        svm_data = self._get(f"/svm/svms/{svm_uuid}", params={"fields": "name"})
-        svm_name = svm_data.get("name", "")
-        volumes = self._get(
-            "/storage/volumes",
-            params={"svm.name": svm_name, "fields": "name,uuid,nas.path", "max_records": 200},
-        ).get("records", [])
+    def _ensure_smb_session(self):
+        """Register an SMB session to the cluster for EVTX file access."""
+        if self._smb_registered or not _SMB_AVAILABLE:
+            return
+        # Discover the CIFS server name for the correct username format
+        try:
+            cifs_data = self._get("/protocols/cifs/services",
+                                  params={"fields": "name", "max_records": 1})
+            records = cifs_data.get("records", [])
+            cifs_name = records[0].get("name", "") if records else ""
+        except OntapError:
+            cifs_name = ""
 
-        # Match the audit log path to a volume NAS path
-        target_vol = None
-        best_match = ""
-        for v in volumes:
-            nas_path = v.get("nas", {}).get("path", "")
-            if nas_path and audit_log_path.startswith(nas_path) and len(nas_path) >= len(best_match):
-                best_match = nas_path
-                target_vol = v
+        # Try local CIFS user first, then fall back to plain credentials
+        usernames = []
+        if cifs_name:
+            usernames.append(f"{cifs_name}\\auditreader")
+        usernames.append("auditreader")
 
-        if not target_vol:
+        for uname in usernames:
+            try:
+                _smbclient.register_session(
+                    self.cluster_ip, username=uname, password=self.password)
+                self._smb_registered = True
+                return
+            except Exception:
+                continue
+
+    def _list_evtx_via_smb(self, audit_log_path: str) -> list[dict]:
+        """List .evtx files by reading the audit share via SMB."""
+        if not _SMB_AVAILABLE:
+            return []
+        self._ensure_smb_session()
+        if not self._smb_registered:
             return []
 
-        # Determine the subdirectory within the volume
-        vol_uuid = target_vol["uuid"]
-        rel_path = audit_log_path[len(best_match):] or "/"
-        if not rel_path.startswith("/"):
-            rel_path = "/" + rel_path
+        # Derive share name from audit_log_path (e.g. /audit_logs -> audit_logs)
+        share = audit_log_path.strip("/").split("/")[0] if audit_log_path.strip("/") else "c$"
+        unc = f"\\\\{self.cluster_ip}\\{share}"
 
         try:
-            data = self._get(
-                f"/storage/volumes/{vol_uuid}/files",
-                params={"path": rel_path, "fields": "name,type,size,changed_time",
-                         "max_records": 500},
-            )
-        except OntapError:
-            return []
+            entries = _smbclient.listdir(unc)
+        except Exception:
+            # Fall back to c$ admin share
+            if share != "c$":
+                unc = f"\\\\{self.cluster_ip}\\c$"
+                subdir = audit_log_path.strip("/")
+                if subdir:
+                    unc += f"\\{subdir}"
+                try:
+                    entries = _smbclient.listdir(unc)
+                except Exception:
+                    return []
+            else:
+                return []
 
         results = []
-        for f in data.get("records", []):
-            name = f.get("name", "")
+        for name in entries:
             if name.lower().endswith(".evtx"):
-                results.append({
-                    "name": name,
-                    "size": f.get("size", 0),
-                    "modified_time": f.get("changed_time", ""),
-                })
+                try:
+                    info = _smbclient.stat(f"{unc}\\{name}")
+                    results.append({
+                        "name": name,
+                        "size": info.st_size,
+                        "modified_time": "",
+                    })
+                except Exception:
+                    results.append({"name": name, "size": 0, "modified_time": ""})
         return results
 
     def download_audit_log_file(self, svm_uuid: str, file_name: str,
@@ -189,43 +221,31 @@ class OntapClient:
                 buf.write(chunk)
             return buf.getvalue()
 
-        # Fallback: download via volume file read API
-        return self._download_evtx_via_volume(svm_uuid, file_name, audit_log_path)
+        # Fallback: download via SMB
+        return self._download_evtx_via_smb(file_name, audit_log_path)
 
-    def _download_evtx_via_volume(self, svm_uuid: str, file_name: str,
-                                   audit_log_path: str) -> bytes:
-        """Download an EVTX file by reading it from the hosting volume."""
-        svm_data = self._get(f"/svm/svms/{svm_uuid}", params={"fields": "name"})
-        svm_name = svm_data.get("name", "")
-        volumes = self._get(
-            "/storage/volumes",
-            params={"svm.name": svm_name, "fields": "name,uuid,nas.path", "max_records": 200},
-        ).get("records", [])
+    def _download_evtx_via_smb(self, file_name: str, audit_log_path: str) -> bytes:
+        """Download an EVTX file via SMB."""
+        if not _SMB_AVAILABLE:
+            raise OntapError("smbprotocol is not installed — cannot download audit files on FSxN.")
+        self._ensure_smb_session()
+        if not self._smb_registered:
+            raise OntapError("Could not establish SMB session for EVTX download.")
 
-        target_vol = None
-        best_match = ""
-        for v in volumes:
-            nas_path = v.get("nas", {}).get("path", "")
-            if nas_path and audit_log_path.startswith(nas_path) and len(nas_path) >= len(best_match):
-                best_match = nas_path
-                target_vol = v
+        share = audit_log_path.strip("/").split("/")[0] if audit_log_path.strip("/") else "c$"
+        unc = f"\\\\{self.cluster_ip}\\{share}\\{file_name}"
 
-        if not target_vol:
-            raise OntapError(f"Could not find volume for audit path '{audit_log_path}'")
-
-        vol_uuid = target_vol["uuid"]
-        rel_path = audit_log_path[len(best_match):]
-        if rel_path and not rel_path.endswith("/"):
-            rel_path += "/"
-        file_path = f"/{rel_path}{file_name}".replace("//", "/")
-
-        url = f"{self.base_url}/storage/volumes/{vol_uuid}/files/{requests.utils.quote(file_path, safe='/')}"
-        resp = self.session.get(url, stream=True, timeout=120)
-        self._raise_for_status(resp)
-        buf = io.BytesIO()
-        for chunk in resp.iter_content(chunk_size=65536):
-            buf.write(chunk)
-        return buf.getvalue()
+        try:
+            with _smbclient.open_file(unc, mode="rb") as f:
+                return f.read()
+        except Exception:
+            # Fall back to c$ admin share
+            unc_alt = f"\\\\{self.cluster_ip}\\c$\\{audit_log_path.strip('/')}\\{file_name}"
+            try:
+                with _smbclient.open_file(unc_alt, mode="rb") as f:
+                    return f.read()
+            except Exception as exc:
+                raise OntapError(f"Failed to download {file_name} via SMB: {exc}")
 
     # ------------------------------------------------------------------
     # CIFS / SMB server & sessions
