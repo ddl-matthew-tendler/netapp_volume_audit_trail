@@ -326,8 +326,9 @@ def preflight():
 
             # 4. Audit log files exist
             if audit_enabled:
+                audit_log_path = audit_cfg.get("log_path", "/")
                 try:
-                    files = client.list_audit_log_files(svm_uuid)
+                    files = client.list_audit_log_files(svm_uuid, audit_log_path)
                     if files:
                         checks.append({
                             "id": f"audit_files_{svm}",
@@ -344,22 +345,12 @@ def preflight():
                                       "after the first audited file access event occurs.",
                         })
                 except OntapError as exc:
-                    error_str = str(exc)
-                    if "404" in error_str:
-                        checks.append({
-                            "id": f"audit_files_{svm}",
-                            "label": f"Audit log files on {svm}",
-                            "status": "fail",
-                            "detail": "The audit log files endpoint returned 404. "
-                                      "This endpoint requires ONTAP 9.11.1 or later.",
-                        })
-                    else:
-                        checks.append({
-                            "id": f"audit_files_{svm}",
-                            "label": f"Audit log files on {svm}",
-                            "status": "error",
-                            "detail": str(exc),
-                        })
+                    checks.append({
+                        "id": f"audit_files_{svm}",
+                        "label": f"Audit log files on {svm}",
+                        "status": "error",
+                        "detail": str(exc),
+                    })
         except OntapError as exc:
             checks.append({
                 "id": f"audit_enabled_{svm}",
@@ -379,7 +370,7 @@ def _demo_preflight_checks(svm_name: str) -> list[dict]:
         "id": "ontap_version",
         "label": "ONTAP version >= 9.11.1",
         "status": "pass",
-        "detail": "Running ONTAP 9.14.1 (demo)",
+        "detail": "Running ONTAP 9.14.1",
     }]
     svms = [svm_name] if svm_name and svm_name != "__all__" else DEMO_SVM_LIST
     for svm in svms:
@@ -536,8 +527,9 @@ def query_events():
             continue  # skip this SVM in multi-SVM mode
 
         # List EVTX log files
+        audit_log_path = audit_cfg.get("log_path", "/")
         try:
-            log_files = client.list_audit_log_files(query_svm_uuid)
+            log_files = client.list_audit_log_files(query_svm_uuid, audit_log_path)
         except OntapError as exc:
             if len(svms_to_query) == 1:
                 return jsonify({"error": f"Failed to list audit log files: {exc}"}), 400
@@ -554,7 +546,7 @@ def query_events():
         # Download and parse
         for f in to_fetch:
             try:
-                raw  = client.download_audit_log_file(query_svm_uuid, f["name"])
+                raw  = client.download_audit_log_file(query_svm_uuid, f["name"], audit_log_path)
                 evts = parse_smb_events(raw, path_prefix, start_dt, end_dt)
                 for ev in evts:
                     ev["svm_name"] = query_svm_name

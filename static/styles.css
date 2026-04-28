@@ -267,20 +267,8 @@ body {
   }
 }
 
-/* ---- Meta bar demo pill ---- */
-.meta-demo-pill {
-  background: var(--warning);
-  color: #2a1a00;
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  padding: 4px 12px;
-  border-radius: 4px;
-}
-
-/* ---- Demo-mode body indicator (thin amber stripe under the top bar) ---- */
-body.is-demo-mode .app-header { box-shadow: inset 0 -3px 0 var(--warning), 0 2px 6px rgba(0,0,0,0.25); }
+/* ---- Demo-mode body indicator (subtle 1px line under header) ---- */
+body.is-demo-mode .app-header { box-shadow: inset 0 -1px 0 rgba(212,133,10,0.35), 0 2px 6px rgba(0,0,0,0.25); }
 
 /* ---- Context bar (auto-filled, read-only) ---- */
 .context-bar {

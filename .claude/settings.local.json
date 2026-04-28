@@ -26,7 +26,11 @@
       "Read(//tmp/**)",
       "Bash(curl -s -I http://127.0.0.1:8888/)",
       "Bash(python3 -c \"\nimport os, requests, urllib3, json, time\nurllib3.disable_warnings\\(\\)\n\nbase = f\\\\\"https://{os.environ['ONTAP_CLUSTER_IP']}/api\\\\\"\ns = requests.Session\\(\\)\ns.auth = \\(os.environ['ONTAP_USERNAME'], os.environ['ONTAP_PASSWORD']\\)\ns.verify = False\ns.headers.update\\({'Accept': 'application/json', 'Content-Type': 'application/json'}\\)\n\njob_uuid = '49dcbabd-42fe-11f1-a9c9-832dc63ff919'\nresp = s.get\\(f'{base}/cluster/jobs/{job_uuid}', timeout=30\\)\nprint\\(json.dumps\\(resp.json\\(\\), indent=2\\)\\)\n\")",
-      "Bash(python3 -c \"from app import app; print\\('App imports OK'\\)\")"
+      "Bash(python3 -c \"from app import app; print\\('App imports OK'\\)\")",
+      "Bash(python3 -c \"from app import app; print\\('App loads OK'\\)\")",
+      "Bash(python3 -c \"\nimport os, json\nos.environ.setdefault\\('DOMINO_PROJECT_NAME', 'test'\\)\nos.environ.setdefault\\('DOMINO_STARTING_USERNAME', 'test'\\)\nfrom app import app\n\nwith app.test_client\\(\\) as c:\n    resp = c.post\\('/api/preflight', json={'svm_name': 'demo-ls102402-svm'}\\)\n    data = resp.get_json\\(\\)\n    for check in data.get\\('checks', []\\):\n        icon = {'pass': '✓', 'warn': '⚠', 'fail': '✗', 'error': '!', 'info': 'ℹ'}\n        print\\(f\\\\\"{icon.get\\(check['status'], '?'\\)} [{check['status']}] {check['label']}\\\\\"\\)\n        print\\(f\\\\\"  {check['detail']}\\\\\"\\)\n\")",
+      "Bash(grep -n -i \"demo\\\\|synthetic\\\\|sample data\\\\|DEMO DATA\\\\|fabricated\" /mnt/code/static/app.js | grep -v \"^.*//.*$\" | head -40)",
+      "Bash(python3 -c \"from app import app; print\\('OK'\\)\")"
     ]
   }
 }

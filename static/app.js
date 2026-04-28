@@ -155,7 +155,7 @@ function renderStatusPanel(data) {
   const open = statusDetailsOpen();
 
   const heading = {
-    demo:    "Demo Mode — Showing Synthetic Sample Data",
+    demo:    "Sample Data",
     live:    "Live Mode — Connected to ONTAP",
     error:   "Live Mode Configured, but ONTAP Connection Failed",
     network: "Cannot Reach the App Backend",
@@ -163,8 +163,8 @@ function renderStatusPanel(data) {
 
   const summary = {
     demo: data.demo_forced
-      ? "The ONTAP_DEMO_MODE override is set to 'true'. Every number, name, and event you see below is fabricated."
-      : "No ONTAP credentials were detected. Every number, name, and event you see below is fabricated.",
+      ? "ONTAP_DEMO_MODE is enabled. Showing illustrative data."
+      : "No ONTAP credentials detected. Showing illustrative data.",
     live: `All data below comes from the live cluster ${data.cluster_name || ""}${data.ontap_version ? ` (ONTAP ${data.ontap_version})` : ""}.`,
     error: data.error || "The app found credentials, but the cluster rejected them or was unreachable.",
     network: data.error || "The app backend did not respond.",
@@ -174,7 +174,7 @@ function renderStatusPanel(data) {
   statusPanel.innerHTML = `
     <div class="status-panel__bar">
       <span class="status-panel__badge">${
-        mode === "demo"  ? "DEMO DATA" :
+        mode === "demo"  ? "SAMPLE" :
         mode === "live"  ? "LIVE" :
         mode === "error" ? "ERROR" : "OFFLINE"
       }</span>
@@ -225,7 +225,7 @@ function renderStatusDetails(mode, data, env) {
         ${envRows}
       </div>
       <div class="status-section status-section--muted">
-        <h4 class="status-section__title">Want to switch back to demo mode?</h4>
+        <h4 class="status-section__title">Want to use sample data instead?</h4>
         <p>Set <code>ONTAP_DEMO_MODE=true</code> as a project environment variable in Domino, then stop and restart this app from the Apps tab.</p>
       </div>
     `;
@@ -371,7 +371,7 @@ vserver audit show -vserver demo-ls102402-svm</pre>
 
     <div class="status-section status-section--muted">
       <h4 class="status-section__title">Already set the variables and restarted?</h4>
-      <p>Click below to re-check. If this panel still shows demo/error after a restart, at least one variable is still missing or incorrect — the checklist above will show which one.</p>
+      <p>Click below to re-check. If this panel still shows an error after a restart, at least one variable is still missing or incorrect — the checklist above will show which one.</p>
       <button type="button" class="btn btn-secondary btn-sm" id="status-reload-btn">Reload and re-check</button>
     </div>
   `;
@@ -408,13 +408,8 @@ function renderEnvChecklist(env) {
 // Demo indicators — persistent cues so users never forget they're
 // looking at synthetic data while scrolling results.
 // -----------------------------------------------------------------------
-let DEMO_MODE_CLIENT = false;
-
 function applyDemoIndicators(isDemo) {
-  DEMO_MODE_CLIENT = isDemo;
   document.body.classList.toggle("is-demo-mode", isDemo);
-  const base = "NetApp File Access Audit Viewer";
-  document.title = isDemo ? `[DEMO] ${base}` : base;
 }
 
 function applyOverrideIndicator(isOverride) {
@@ -842,13 +837,7 @@ exportCsvBtn.addEventListener("click", () => {
 function renderMetaBar(meta) {
   if (!meta) return;
   metaBar.style.display = "flex";
-  const demoPill = DEMO_MODE_CLIENT
-    ? `<div class="meta-item meta-demo-pill">
-         <span>DEMO DATA — synthetic events, no cluster was queried</span>
-       </div>`
-    : "";
   metaBar.innerHTML = `
-    ${demoPill}
     ${metaItem("Project",       meta.project_name)}
     ${metaItem("Queried by",    meta.queried_by)}
     ${metaItem("SVM",           meta.svm_name)}

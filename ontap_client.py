@@ -102,26 +102,125 @@ class OntapClient:
         data = self._get(f"/protocols/audit/{svm_uuid}")
         return data
 
-    def list_audit_log_files(self, svm_uuid: str) -> list[dict]:
+    def list_audit_log_files(self, svm_uuid: str, audit_log_path: str = "/") -> list[dict]:
         """
         Return a list of audit log file descriptors for the SVM.
         Each record contains at minimum: name, modified_time, size.
 
-        Requires ONTAP 9.11.1 or later.
+        Tries the dedicated audit log files API first (ONTAP 9.11.1+).
+        Falls back to browsing the audit destination volume for .evtx files
+        (necessary on FSxN where the audit log files API is not available).
         """
-        data = self._get(
-            f"/protocols/audit/{svm_uuid}/log/files",
-            params={"fields": "name,modified_time,size", "max_records": 500},
-        )
-        return data.get("records", [])
+        try:
+            data = self._get(
+                f"/protocols/audit/{svm_uuid}/log/files",
+                params={"fields": "name,modified_time,size", "max_records": 500},
+            )
+            return data.get("records", [])
+        except OntapError as exc:
+            if "API not found" not in str(exc) and "404" not in str(exc):
+                raise
+            # Fallback: browse the audit destination volume for .evtx files
+            return self._list_evtx_via_volume_browser(svm_uuid, audit_log_path)
 
-    def download_audit_log_file(self, svm_uuid: str, file_name: str) -> bytes:
+    def _list_evtx_via_volume_browser(self, svm_uuid: str, audit_log_path: str) -> list[dict]:
+        """
+        List .evtx files by finding the volume that hosts the audit log path
+        and browsing it with the /storage/volumes/{uuid}/files API.
+        """
+        # Find the volume whose NAS path matches the audit destination
+        svm_data = self._get(f"/svm/svms/{svm_uuid}", params={"fields": "name"})
+        svm_name = svm_data.get("name", "")
+        volumes = self._get(
+            "/storage/volumes",
+            params={"svm.name": svm_name, "fields": "name,uuid,nas.path", "max_records": 200},
+        ).get("records", [])
+
+        # Match the audit log path to a volume NAS path
+        target_vol = None
+        best_match = ""
+        for v in volumes:
+            nas_path = v.get("nas", {}).get("path", "")
+            if nas_path and audit_log_path.startswith(nas_path) and len(nas_path) >= len(best_match):
+                best_match = nas_path
+                target_vol = v
+
+        if not target_vol:
+            return []
+
+        # Determine the subdirectory within the volume
+        vol_uuid = target_vol["uuid"]
+        rel_path = audit_log_path[len(best_match):] or "/"
+        if not rel_path.startswith("/"):
+            rel_path = "/" + rel_path
+
+        try:
+            data = self._get(
+                f"/storage/volumes/{vol_uuid}/files",
+                params={"path": rel_path, "fields": "name,type,size,changed_time",
+                         "max_records": 500},
+            )
+        except OntapError:
+            return []
+
+        results = []
+        for f in data.get("records", []):
+            name = f.get("name", "")
+            if name.lower().endswith(".evtx"):
+                results.append({
+                    "name": name,
+                    "size": f.get("size", 0),
+                    "modified_time": f.get("changed_time", ""),
+                })
+        return results
+
+    def download_audit_log_file(self, svm_uuid: str, file_name: str,
+                                audit_log_path: str = "/") -> bytes:
         """
         Stream-download a specific EVTX audit log file and return its raw bytes.
-        Uses the /protocols/audit/{svm_uuid}/log/files/{name}?action=download endpoint.
+        Tries the dedicated audit API first, falls back to volume file read.
         """
+        # Try dedicated audit download endpoint first
         url = f"{self.base_url}/protocols/audit/{svm_uuid}/log/files/{requests.utils.quote(file_name, safe='')}"
         resp = self.session.get(url, params={"action": "download"}, stream=True, timeout=120)
+        if resp.ok:
+            buf = io.BytesIO()
+            for chunk in resp.iter_content(chunk_size=65536):
+                buf.write(chunk)
+            return buf.getvalue()
+
+        # Fallback: download via volume file read API
+        return self._download_evtx_via_volume(svm_uuid, file_name, audit_log_path)
+
+    def _download_evtx_via_volume(self, svm_uuid: str, file_name: str,
+                                   audit_log_path: str) -> bytes:
+        """Download an EVTX file by reading it from the hosting volume."""
+        svm_data = self._get(f"/svm/svms/{svm_uuid}", params={"fields": "name"})
+        svm_name = svm_data.get("name", "")
+        volumes = self._get(
+            "/storage/volumes",
+            params={"svm.name": svm_name, "fields": "name,uuid,nas.path", "max_records": 200},
+        ).get("records", [])
+
+        target_vol = None
+        best_match = ""
+        for v in volumes:
+            nas_path = v.get("nas", {}).get("path", "")
+            if nas_path and audit_log_path.startswith(nas_path) and len(nas_path) >= len(best_match):
+                best_match = nas_path
+                target_vol = v
+
+        if not target_vol:
+            raise OntapError(f"Could not find volume for audit path '{audit_log_path}'")
+
+        vol_uuid = target_vol["uuid"]
+        rel_path = audit_log_path[len(best_match):]
+        if rel_path and not rel_path.endswith("/"):
+            rel_path += "/"
+        file_path = f"/{rel_path}{file_name}".replace("//", "/")
+
+        url = f"{self.base_url}/storage/volumes/{vol_uuid}/files/{requests.utils.quote(file_path, safe='/')}"
+        resp = self.session.get(url, stream=True, timeout=120)
         self._raise_for_status(resp)
         buf = io.BytesIO()
         for chunk in resp.iter_content(chunk_size=65536):
