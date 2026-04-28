@@ -24,7 +24,9 @@
       "Bash(curl -s \"https://www.google.com/search?q=domino+data+lab+docs+project+environment+variables+ui+path\" -L -A \"Mozilla/5.0\")",
       "Bash(python *)",
       "Read(//tmp/**)",
-      "Bash(curl -s -I http://127.0.0.1:8888/)"
+      "Bash(curl -s -I http://127.0.0.1:8888/)",
+      "Bash(python3 -c \"\nimport os, requests, urllib3, json, time\nurllib3.disable_warnings\\(\\)\n\nbase = f\\\\\"https://{os.environ['ONTAP_CLUSTER_IP']}/api\\\\\"\ns = requests.Session\\(\\)\ns.auth = \\(os.environ['ONTAP_USERNAME'], os.environ['ONTAP_PASSWORD']\\)\ns.verify = False\ns.headers.update\\({'Accept': 'application/json', 'Content-Type': 'application/json'}\\)\n\njob_uuid = '49dcbabd-42fe-11f1-a9c9-832dc63ff919'\nresp = s.get\\(f'{base}/cluster/jobs/{job_uuid}', timeout=30\\)\nprint\\(json.dumps\\(resp.json\\(\\), indent=2\\)\\)\n\")",
+      "Bash(python3 -c \"from app import app; print\\('App imports OK'\\)\")"
     ]
   }
 }

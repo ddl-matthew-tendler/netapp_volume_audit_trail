@@ -98,6 +98,7 @@ const filterFields  = document.getElementById("filter-fields");
 
     renderStatusPanel(data);
     applyDemoIndicators(!!data.demo_mode);
+    applyOverrideIndicator(!!data.demo_override);
 
     if (!res.ok || !data.ok) {
       // ONTAP connection failed — but still show the form if demo mode is active
@@ -414,6 +415,21 @@ function applyDemoIndicators(isDemo) {
   document.body.classList.toggle("is-demo-mode", isDemo);
   const base = "NetApp File Access Audit Viewer";
   document.title = isDemo ? `[DEMO] ${base}` : base;
+}
+
+function applyOverrideIndicator(isOverride) {
+  let el = document.getElementById("demo-override-hint");
+  if (isOverride) {
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "demo-override-hint";
+      el.style.cssText = "position:fixed;bottom:4px;right:8px;font-size:10px;color:#999;opacity:0.5;z-index:1;pointer-events:none;";
+      el.textContent = "sample data active";
+      document.body.appendChild(el);
+    }
+  } else if (el) {
+    el.remove();
+  }
 }
 
 // -----------------------------------------------------------------------
@@ -896,3 +912,25 @@ async function post(url, body) {
 }
 function thS() { return "padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:#6b7d8f;text-transform:uppercase;border-bottom:2px solid #d8dde6;"; }
 function tdS() { return "padding:8px 12px;border-bottom:1px solid #f0f2f5;"; }
+
+// -----------------------------------------------------------------------
+// Hidden demo override — triple-click the header logo to toggle
+// -----------------------------------------------------------------------
+(() => {
+  const logo = document.querySelector(".brand-logo");
+  if (!logo) return;
+  let clicks = 0, timer = null;
+  logo.style.cursor = "default";
+  logo.addEventListener("click", () => {
+    clicks++;
+    clearTimeout(timer);
+    if (clicks >= 3) {
+      clicks = 0;
+      post("/api/demo-toggle", {}).then(r => r.json()).then(() => {
+        location.reload();
+      });
+    } else {
+      timer = setTimeout(() => { clicks = 0; }, 600);
+    }
+  });
+})();

@@ -37,6 +37,12 @@ _ONTAP_CONFIGURED = bool(
 )
 _DEMO_FORCED = os.environ.get("ONTAP_DEMO_MODE", "false").lower() == "true"
 DEMO_MODE = _DEMO_FORCED or not _ONTAP_CONFIGURED
+_DEMO_OVERRIDE = False  # Runtime toggle — set via hidden UI switch
+
+
+def _is_demo() -> bool:
+    """Check if demo mode is active (static config OR runtime override)."""
+    return DEMO_MODE or _DEMO_OVERRIDE
 
 
 def _env_status() -> dict:
@@ -118,9 +124,9 @@ def index():
         "index.html",
         project_name=ctx["project_name"],
         username=ctx["username"],
-        demo_mode=DEMO_MODE,
+        demo_mode=_is_demo(),
         ontap_configured=_ONTAP_CONFIGURED,
-        evtx_available=(EVTX_AVAILABLE or DEMO_MODE),
+        evtx_available=(EVTX_AVAILABLE or _is_demo()),
         inline_css=inline["styles.css"],
         inline_app_js=inline["app.js"],
         inline_debug_js=inline["debug.js"],
@@ -141,7 +147,7 @@ def init():
     ctx = _domino_context()
     env_status = _env_status()
 
-    if DEMO_MODE:
+    if _is_demo():
         return jsonify({
             "ok": True,
             "cluster_name": DEMO_CLUSTER_NAME,
@@ -153,6 +159,7 @@ def init():
             "demo_mode": True,
             "demo_reason": _demo_reason(),
             "demo_forced": _DEMO_FORCED,
+            "demo_override": _DEMO_OVERRIDE,
             "env_status": env_status,
         })
 
@@ -214,7 +221,7 @@ def preflight():
     body = request.get_json(force=True)
     svm_name = body.get("svm_name", "")
 
-    if DEMO_MODE:
+    if _is_demo():
         return jsonify({"checks": _demo_preflight_checks(svm_name)})
 
     checks = []
@@ -446,7 +453,7 @@ def query_events():
     ctx           = _domino_context()
 
     # --- Demo mode: return synthetic events, no ONTAP or python-evtx needed ---
-    if DEMO_MODE:
+    if _is_demo():
         events = generate_demo_events(
             body["svm_name"], body["start_date"], body["end_date"],
             path_prefix, username_filt, event_types or None,
@@ -589,7 +596,7 @@ def live_sessions():
     if not body.get("svm_name"):
         return jsonify({"error": "svm_name is required"}), 400
 
-    if DEMO_MODE:
+    if _is_demo():
         return jsonify({"sessions": [
             {"user": "j.smith",    "client_ip": "10.0.1.45",  "svm": {"name": body["svm_name"]}, "connected_duration": "PT2H14M", "open_files": 3, "protocol": "SMB"},
             {"user": "m.johnson",  "client_ip": "10.0.1.112", "svm": {"name": body["svm_name"]}, "connected_duration": "PT47M",   "open_files": 1, "protocol": "SMB"},
@@ -615,6 +622,19 @@ def live_sessions():
                         "NFS-mounted volumes do not expose a live sessions API."
             })
         return jsonify({"error": str(exc)}), 400
+
+
+# ---------------------------------------------------------------------------
+# Hidden demo override toggle — failsafe for customer demos
+# ---------------------------------------------------------------------------
+
+@app.route("/api/demo-toggle", methods=["POST"])
+def demo_toggle():
+    """Toggle the runtime demo override. Not linked in the UI — activated
+    by triple-clicking the header logo."""
+    global _DEMO_OVERRIDE
+    _DEMO_OVERRIDE = not _DEMO_OVERRIDE
+    return jsonify({"demo_override": _DEMO_OVERRIDE})
 
 
 # ---------------------------------------------------------------------------
